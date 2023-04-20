@@ -5,12 +5,18 @@ const ffprobe = require("fluent-ffmpeg").ffprobe;
 const async = require("async");
 const cutList = require("./tv-edit-list.cjs");
 
-const originalVideo = "/Users/cmcculloh/Movies/spiderman-2.mp4";
+console.log("cutList: ", cutList);
+
+const originalVideo = "./public/spiderman-2.mp4";
 const finalVideo = "spidermand-2-TV-Edit.mp4";
 
+// function timeStringToSeconds(timeString) {
+// 	const [hours, minutes, seconds, milliseconds] = timeString.split(":").map(Number);
+// 	return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+// }
 function timeStringToSeconds(timeString) {
-	const [hours, minutes, seconds] = timeString.split(":").map(Number);
-	return hours * 3600 + minutes * 60 + seconds;
+	console.log("timeString: ", timeString);
+	return parseFloat(timeString);
 }
 
 function cutVideo(input, start, end, output, callback) {
@@ -50,6 +56,8 @@ function processVideo(input, cutList, output, callback) {
 			return;
 		}
 
+		console.log("cutList", cutList);
+
 		async.eachSeries(
 			cutList,
 			(timestamp, timestampCallback) => {
@@ -68,6 +76,8 @@ function processVideo(input, cutList, output, callback) {
 					callback(err);
 					return;
 				}
+
+				console.log("what waht");
 
 				// Add the last segment after the final cut
 				if (currentStart < videoDurationInSeconds) {
@@ -107,9 +117,6 @@ function processVideo(input, cutList, output, callback) {
 	});
 }
 
-
-
-
 function concatenateSegments(segmentFilenames, output, callback) {
 	const listFile = path.join("temp_segments", "list.txt");
 	const listContent = segmentFilenames.map((input) => `file '${path.resolve(input)}'`).join("\n");
@@ -132,12 +139,11 @@ function concatenateSegments(segmentFilenames, output, callback) {
 		.run();
 }
 
-
 // Make a copy of the original video
 fs.copyFileSync(originalVideo, "temp-original.mp4");
 
 // Process the copied video using the cutList
-processVideo("temp-original.mp4", cutList[0].cuts, finalVideo, (err) => {
+processVideo("temp-original.mp4", cutList, finalVideo, (err) => {
 	if (err) {
 		console.error(err);
 		process.exit(1);

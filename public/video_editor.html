@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Editor</title>
+    <link rel="stylesheet" href="video_editor.css">
+</head>
+<body>
+    <video id="video" controls>
+        <source src="./spiderman-2.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+    <div id="currentTime">00:00:00.000</div>
+        <button id="seekBackward">Seek Backward</button>
+    <button id="seekForward">Seek Forward</button>
+    <div>
+        <button id="toggleCut">Cut Start</button><button id="copy-cutlist">Copy Cutlist</button>
+    </div>
+
+
+    <pre id="cutlist"></pre>
+    <script src="video_editor.js"></script>
+</body>
+</html>
+

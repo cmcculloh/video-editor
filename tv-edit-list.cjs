@@ -1,12 +1,11 @@
 const cutList = [
 	{
-		video: "spiderman-2.mp4",
-		cuts: [
-			{
-				start: "1:27:20",
-				end: "1:28:11",
-			},
-		],
+		start: "5239.773",
+		end: "5290.346",
+	},
+	{
+		start: "7291.361",
+		end: "7298.426",
 	},
 ];
 
