@@ -3,14 +3,23 @@ import util from "util";
 import fs from "fs";
 import path from "path";
 import axios from "axios";
-const execPromisified = util.promisify(exec);
+// const execPromisified = util.promisify(exec);
 const writeFile = util.promisify(fs.writeFile);
 const readFile = util.promisify(fs.readFile);
 import { pipeline } from "stream/promises";
 import fetch from "node-fetch";
 
+const execPromisified = (command) => {
+	return new Promise((resolve) => {
+		exec(command, (error, stdout, stderr) => {
+			resolve({ error, stdout, stderr });
+		});
+	});
+};
+
 const playlistUrl = process.argv[2];
 const folderName = process.argv[3];
+const flag = process.argv[4];
 const cookiesFilePath = "cookies.txt";
 
 if (!fs.existsSync("downloads")) {
@@ -40,10 +49,11 @@ if (playlistUrl.includes("playlist")) {
 	let channelName;
 
 	try {
-		({ stdout: channelName } = await execPromisified(
-			`yt-dlp --cookies ${cookiesFilePath} --get-filename --no-playlist --output "%(uploader)s" "${playlistUrl}"`
-		));
-		channelName = channelName.trim().split("\n")[0];
+		const ytdlcommand = `yt-dlp -i --cookies ${cookiesFilePath} --get-filename --no-playlist --output "%(uploader)s" "${playlistUrl}"`;
+		console.log("about to run command", ytdlcommand);
+		const { stdout: channelNames } = await execPromisified(ytdlcommand);
+		console.log("found channel names", channelNames);
+		channelName = channelNames.trim().split("\n")[0];
 		console.log("channelName", channelName);
 	} catch (error) {
 		console.error(`Error getting channel name: ${error}`);
@@ -57,16 +67,15 @@ if (playlistUrl.includes("playlist")) {
 	process.exit(1);
 }
 
-console.log("comparing with previous downloads in: ", downloadedVideosFile);
-
 if (!fs.existsSync(outputDir)) {
 	fs.mkdirSync(outputDir);
 }
 
+console.log("comparing with previous downloads in: ", downloadedVideosFile);
+
 async function downloadThumbnail(thumbnailUrl, outputPath) {
 	try {
 		console.log();
-		console.log("Downloading thumbnail...", thumbnailUrl, outputPath);
 
 		const response = await axios({
 			method: "GET",
@@ -82,7 +91,6 @@ async function downloadThumbnail(thumbnailUrl, outputPath) {
 			writer.on("error", reject);
 		});
 
-		console.log();
 		console.log("Thumbnail downloaded:", outputPath);
 	} catch (error) {
 		console.error("Error downloading thumbnail:", error.message);
@@ -124,8 +132,11 @@ async function downloadVideo(videoInfo, filename) {
 
 			await pipeline(response.body, fileStream);
 
-			console.log(); // Print a newline after the progress bar
+			const thumbnailFilename = `${path.basename(filename, ".mp4")}.jpg`;
+			const thumbnailOutputPath = path.join(outputDir, thumbnailFilename);
+			await downloadThumbnail(videoInfo.thumbnail, thumbnailOutputPath);
 
+			console.log("adding metadata");
 			const metadataArgs = [
 				"-i",
 				tempFilename,
@@ -144,7 +155,8 @@ async function downloadVideo(videoInfo, filename) {
 			resolve();
 		} catch (error) {
 			fs.unlink(filename, () => {});
-			reject(error);
+			console.log(`error downloading ${videoInfo.title}: ${error}`);
+			resolve();
 		}
 	});
 }
@@ -189,20 +201,46 @@ const getPlaylistInfo = async (url) => {
 	}
 };
 
-async function getVideoInfo(videoId) {
+const fetchVideoInfo = async (videoId) => {
 	const { stdout: jsonOutput } = await execPromisified(
 		`yt-dlp --cookies ${cookiesFilePath} -j https://www.youtube.com/watch?v=${videoId}`,
 		{ maxBuffer: 10 * 1024 * 1024 }
 	);
 
 	return JSON.parse(jsonOutput);
-}
+};
+
+// videoIds could actually be just an array of video ids, or an array of objects with video ids and season/episode numbers
+const getVideoInfo = async (videoIds) => {
+	const video = videoIds[0];
+	const videoInfo = await fetchVideoInfo(video.id || video);
+	const videoUploadDate = videoInfo.upload_date;
+	const lastyear = parseInt(videoUploadDate.slice(0, 4), 10);
+	const seasonCounter = video.season || 1;
+	const episodeCounter = video.episode + 1 || 1;
+
+	return { lastyear, episodeCounter, seasonCounter };
+};
 
 (async () => {
 	try {
-		const { stdout: ids } = await execPromisified(
+		console.log("starting");
+
+		const ytdlCommand = `yt-dlp -i -f best --cookies ${cookiesFilePath} --get-id ${playlistUrl}`;
+		console.log("running", ytdlCommand);
+		const {
+			error: ytDlpError,
+			stdout: ids,
+			stderr: errors,
+		} = await execPromisified(
 			`yt-dlp -i -f best --cookies ${cookiesFilePath} --get-id ${playlistUrl}`
 		);
+
+		console.log("got ids", ids);
+
+		if (ytDlpError) {
+			console.warn("yt-dlp error:", ytDlpError);
+		}
 
 		let downloadedData = [];
 		if (fs.existsSync(downloadedVideosFile)) {
@@ -212,39 +250,32 @@ async function getVideoInfo(videoId) {
 
 		const videoIds = ids
 			.split("\n")
-			.filter((id) => id && !downloadedData.some((entry) => entry.id === id));
+			.filter(
+				(id) =>
+					id &&
+					!id.startsWith("ERROR:") &&
+					!downloadedData.some((entry) => entry.id === id)
+			);
+
+		console.log("videoIds", videoIds);
 
 		if (playlistUrl.includes("videos")) {
 			videoIds.reverse();
 		}
-		let seasonCounter;
-		let episodeCounter;
-		let lastyear;
 
-		if (downloadedData.length > 0) {
-			const lastEntry = downloadedData[downloadedData.length - 1];
-			const lastEntryInfo = await getVideoInfo(lastEntry.id);
-			const lastEntryUploadDate = lastEntryInfo.upload_date;
-			lastyear = parseInt(lastEntryUploadDate.slice(0, 4), 10);
-			seasonCounter = lastEntry.season;
-			episodeCounter = lastEntry.episode + 1;
-		} else {
-			console.log(`Getting info for videoId: ${videoIds[0]}`, videoIds.join(", "));
-			const firstVideoInfo = await getVideoInfo(videoIds[0]);
-			const firstVideoUploadDate = firstVideoInfo.upload_date;
-			lastyear = parseInt(firstVideoUploadDate.slice(0, 4), 10);
-			seasonCounter = 1;
-			episodeCounter = 1;
-		}
+		let { lastyear, episodeCounter, seasonCounter } = await getVideoInfo(
+			downloadedData.lengh > 0 ? downloadedData.toReversed() : videoIds
+		);
 
 		for (const videoId of videoIds) {
-			console.log(`Getting info for videoId: ${videoId}`);
-			const { stdout: videoUrl } = await execPromisified(
-				`yt-dlp -i -f best --cookies ${cookiesFilePath} --get-url https://www.youtube.com/watch?v=${videoId}`,
-				{ maxBuffer: 10 * 1024 * 1024 }
-			);
+			const ytdlpcommand = `yt-dlp -i -f best --cookies ${cookiesFilePath} --get-url https://www.youtube.com/watch?v=${videoId}`;
+			console.log();
+			console.log(`Getting info for videoId: ${videoId} with command: ${ytdlpcommand}`);
+			const { stdout: videoUrl } = await execPromisified(ytdlpcommand, {
+				maxBuffer: 10 * 1024 * 1024,
+			});
 
-			const videoInfo = await getVideoInfo(videoId);
+			const videoInfo = await fetchVideoInfo(videoId);
 			videoInfo.url = videoUrl;
 			const title = videoInfo.title;
 			const videoUploadDate = videoInfo.upload_date;
@@ -256,12 +287,14 @@ async function getVideoInfo(videoId) {
 				lastyear = currentYear;
 			}
 
-			const fileName = `${outputDir}/S${seasonCounter
-				.toString()
-				.padStart(2, "0")}E${episodeCounter.toString().padStart(2, "0")}-${title.replace(
-				/[\/:*?"<>|]/g,
-				"_"
-			)}.mp4`;
+			const season =
+				flag === "--no-season" ? "" : `S${seasonCounter.toString().padStart(2, "0")}`;
+			const episode =
+				flag === "--no-episode"
+					? ""
+					: `${season}E${episodeCounter.toString().padStart(2, "0")}-`;
+
+			const fileName = `${outputDir}/${episode}${title.replace(/[\/:*?"<>|]/g, "_")}.mp4`;
 
 			console.log(`Downloading video: ${title}`);
 			await downloadVideo(videoInfo, fileName);
@@ -279,6 +312,6 @@ async function getVideoInfo(videoId) {
 			episodeCounter++;
 		}
 	} catch (error) {
-		console.error(`Error: ${error}`);
+		console.error(`Error in main loop: ${error}`);
 	}
 })();
