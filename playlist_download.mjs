@@ -21,6 +21,8 @@ const playlistUrl = process.argv[2];
 const folderName = process.argv[3];
 const flag = process.argv[4];
 const cookiesFilePath = "cookies.txt";
+// Change this to fit your environment
+const defaultRoot = "/volume1/McCullohShare/Plex/TV";
 
 if (!fs.existsSync("downloads")) {
 	fs.mkdirSync("downloads");
@@ -44,7 +46,7 @@ let outputDir;
 if (playlistUrl.includes("playlist")) {
 	const playlistId = new URL(playlistUrl).searchParams.get("list");
 	downloadedVideosFile = `downloads/downloaded_videos_${playlistId}.json`;
-	outputDir = `/volume1/McCullohShare/Plex/TV/${folderName ? folderName : playlistId}`;
+	outputDir = `${defaultRoot}${folderName ? folderName : playlistId}`;
 } else if (playlistUrl.includes("videos")) {
 	let channelName;
 
@@ -61,7 +63,7 @@ if (playlistUrl.includes("playlist")) {
 	}
 
 	downloadedVideosFile = `downloads/downloaded_videos_${channelName}.json`;
-	outputDir = `/volume1/McCullohShare/Plex/TV/${folderName ? folderName : channelName}`;
+	outputDir = `${defaultRoot}${folderName ? folderName : channelName}`;
 } else {
 	console.error("Invalid URL format. Please provide a playlist or videos URL.");
 	process.exit(1);
