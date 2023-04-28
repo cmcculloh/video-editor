@@ -4,6 +4,10 @@ The code in this repository was built _almost entirely_ by ChatGPT 4. This was a
 
 Even the documentation below _this line_ was (almost) entirely ChatGPT4 generated.
 
+## Table of Contents
+- [YT Playlist Download](#playlist-download-playlist_downloadmjs)
+- [TV Edit Creator](#tv-edit-generator)
+
 ## Playlist Download (playlist_download.mjs)
 
 This is a script to download video playlists from YouTube using Node.js. It downloads the videos and stores them in the specified folder with season and episode numbers (optional).
