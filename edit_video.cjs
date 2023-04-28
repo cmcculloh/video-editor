@@ -7,8 +7,8 @@ const cutList = require("./tv-edit-list.cjs");
 
 console.log("cutList: ", cutList);
 
-const originalVideo = "./public/spiderman-2.mp4";
-const finalVideo = "spidermand-2-TV-Edit.mp4";
+const originalVideo = "./public/spiderman.mp4";
+const finalVideo = "spidermand-TV-Edit.mp4";
 
 // function timeStringToSeconds(timeString) {
 // 	const [hours, minutes, seconds, milliseconds] = timeString.split(":").map(Number);
