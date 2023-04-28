@@ -2,7 +2,7 @@
 
 The code in this repository was built _almost entirely_ by ChatGPT 4. This was a series of experiments to see how much ChatGPT 4 could do on its own without my changing a single line of code. I would describe a problem or goal I had, ChatGPT would give me some code, I'd run the code and feed ChatGPT the output if it error'd. If it worked, I'd describe the next freature/modification I wanted in the program. There were several places that ChatGPT just _could not_ figure out what was wrong or what to do that I had to step in and do it myself, but by-and-large, everything here was generated based on me writing the correct prompts/guidance to ChatGPT.
 
-Even the documentation below this line was entirely ChatGPT4 generated.
+Even the documentation below _this line_ was (almost) entirely ChatGPT4 generated.
 
 ## Playlist Download (playlist_download.mjs)
 
