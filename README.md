@@ -1,12 +1,15 @@
 # Auto Video Editor
 
+![Very Complicated Looking Robot with Film Lenses](very_complicated_looking_robot_with_film_lenses_a_04c8cd82-bf63-4300-b686-be77e8f06ee8.png)
+
 The code in this repository was built _almost entirely_ by ChatGPT 4. This was a series of experiments to see how much ChatGPT 4 could do on its own without my changing a single line of code. I would describe a problem or goal I had, ChatGPT would give me some code, I'd run the code and feed ChatGPT the output if it error'd. If it worked, I'd describe the next freature/modification I wanted in the program. There were several places that ChatGPT just _could not_ figure out what was wrong or what to do that I had to step in and do it myself, but by-and-large, everything here was generated based on me writing the correct prompts/guidance to ChatGPT.
 
-Even the documentation below _this line_ was (almost) entirely ChatGPT4 generated.
+The documentation below _this line_ was (almost) entirely ChatGPT4 generated.
 
 ## Table of Contents
 - [YT Playlist Download](#playlist-download-playlist_downloadmjs)
 - [TV Edit Creator](#tv-edit-generator)
+- [Robots Editing Video](#robots-editing-video)
 
 ## Playlist Download (playlist_download.mjs)
 
@@ -119,3 +122,6 @@ npm install
 2. The script processes the input video according to the cutlist, creating a new output video with the specified cuts.
 
 The "edit_video.cjs" script reads the cutlist from "tv-edit-list.cjs", processes the input video by cutting the specified segments, and concatenates the remaining segments to create a new output video. The script uses the `fluent-ffmpeg` library to perform video editing operations, and the `async` library to handle asynchronous processing.
+
+
+
