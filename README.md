@@ -9,7 +9,6 @@ The documentation below _this line_ was (almost) entirely ChatGPT4 generated.
 ## Table of Contents
 - [YT Playlist Download](#playlist-download-playlist_downloadmjs)
 - [TV Edit Creator](#tv-edit-generator)
-- [Robots Editing Video](#robots-editing-video)
 
 ## Playlist Download (playlist_download.mjs)
 
