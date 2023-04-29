@@ -13,7 +13,9 @@ The documentation below _this line_ was (almost) entirely ChatGPT4 generated.
 
 ## Playlist Download (playlist_download.mjs)
 
-This is a script to download video playlists from YouTube using Node.js. It downloads the videos and stores them in the specified folder with season and episode numbers (optional).
+This is a script to download video playlists from YouTube using Node.js. It downloads the videos and stores them in the specified folder with season and episode numbers (optional). Previous downloads are cached, so if more videos are added to the playlist and you run it again, it will only download the new videos.
+
+[transcript of chat that generated this code](./chatgpttranscript-playlist_download.pdf)
 
 ### Requirements
 
