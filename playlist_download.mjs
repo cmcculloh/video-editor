@@ -238,11 +238,11 @@ const getVideoInfo = async (videoIds) => {
 			`yt-dlp -i -f best --cookies ${cookiesFilePath} --get-id ${playlistUrl}`
 		);
 
-		console.log("got ids", ids);
+		console.log(`got ${ids.split("\n").length} ids`);
 
-		if (ytDlpError) {
-			console.warn("yt-dlp error:", ytDlpError);
-		}
+		// if (ytDlpError) {
+		// 	console.warn("yt-dlp error:", ytDlpError);
+		// }
 
 		let downloadedData = [];
 		if (fs.existsSync(downloadedVideosFile)) {
@@ -260,6 +260,10 @@ const getVideoInfo = async (videoIds) => {
 			);
 
 		console.log("videoIds", videoIds);
+		if (videoIds.length === 0) {
+			console.log("No new videos to download");
+			return;
+		}
 
 		if (playlistUrl.includes("videos")) {
 			videoIds.reverse();
