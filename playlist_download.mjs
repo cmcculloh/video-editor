@@ -51,7 +51,7 @@ if (playlistUrl.includes("playlist")) {
 	let channelName;
 
 	try {
-		const ytdlcommand = `yt-dlp -i --cookies ${cookiesFilePath} --get-filename --no-playlist --output "%(uploader)s" "${playlistUrl}"`;
+		const ytdlcommand = `yt-dlp -i --cookies ${cookiesFilePath} --get-filename --no-playlist --playlist-items 1 --output "%(uploader)s" "${playlistUrl}"`;
 		console.log("about to run command", ytdlcommand);
 		const { stdout: channelNames } = await execPromisified(ytdlcommand);
 		console.log("found channel names", channelNames);
