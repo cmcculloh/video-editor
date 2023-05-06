@@ -22,7 +22,7 @@ const folderName = process.argv[3];
 const flag = process.argv[4];
 const cookiesFilePath = "cookies.txt";
 // Change this to fit your environment
-const defaultRoot = "/volume1/McCullohShare/Plex/TV";
+const defaultRoot = "/volume1/McCullohShare/Plex/TV/";
 
 if (!fs.existsSync("downloads")) {
 	fs.mkdirSync("downloads");
@@ -234,9 +234,7 @@ const getVideoInfo = async (videoIds) => {
 			error: ytDlpError,
 			stdout: ids,
 			stderr: errors,
-		} = await execPromisified(
-			`yt-dlp -i -f best --cookies ${cookiesFilePath} --get-id ${playlistUrl}`
-		);
+		} = await execPromisified(ytdlCommand);
 
 		console.log(`got ${ids.split("\n").length} ids`);
 
