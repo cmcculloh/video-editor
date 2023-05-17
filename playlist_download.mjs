@@ -1,3 +1,7 @@
+// node playlist_download.mjs "https://youtube.com/playlist?list=PLFm1tTY1NA4coPMrYuttluRQ1yzVO8gqp" "MumboJumbo/Season-8" --no-episode
+// node playlist_download.mjs "https://www.youtube.com/@postmodernjukebox/videos" "PostmodernJukebox"
+// node playlist_download.mjs "https://www.youtube.com/playlist?list=PLeNLZ73biGeuPLmw2BtvPysAZ9PEHOo3e" become-elite
+
 import { exec, execFile } from "child_process";
 import util from "util";
 import fs from "fs";
@@ -47,7 +51,7 @@ if (playlistUrl.includes("playlist")) {
 	const playlistId = new URL(playlistUrl).searchParams.get("list");
 	downloadedVideosFile = `downloads/downloaded_videos_${playlistId}.json`;
 	outputDir = `${defaultRoot}${folderName ? folderName : playlistId}`;
-} else if (playlistUrl.includes("videos")) {
+} else if (playlistUrl.includes("videos") || playlistUrl.includes("shorts")) {
 	let channelName;
 
 	try {
