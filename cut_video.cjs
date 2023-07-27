@@ -229,9 +229,18 @@ function concatVideos(dir, inputs, output, callback) {
 }
 
 
+
 function processVideos(inputs, output, callback) {
 	let segmentFilenames = [];
 	let videoIndex = 0;
+
+	// Count total timestamps
+	let processedTimestamps = 0;
+	let outputSegment = "";
+	let ts = inputs.reduce((acc, input) => acc = [...acc, ...input.timestamps], []);
+	let interval = setInterval(() => {
+		updateProgressBar(processedTimestamps, ts, outputSegment);
+	}, 1000);
 
 	async.eachSeries(
 		inputs,
@@ -242,24 +251,24 @@ function processVideos(inputs, output, callback) {
 				timestamps,
 				(timestamp, timestampCallback) => {
 					const index = videoIndex++;
-					const outputSegment = path.join(segmentsDir, `segment_${index}.mp4`);
+					outputSegment = path.join(segmentsDir, `segment_${index}.mp4`);
 					segmentFilenames.push(outputSegment);
 					const paddedOutputSegment = path.join(
 						paddedSegmentsDir,
 						`segment_${index}.mp4`
 					);
-					// Adjust the start and end times to include a second of margin on either side for fades and such
-					// const paddedStart = Math.max(timeStringToSeconds(timestamp.start) - 1, 0);
-					// const paddedEnd = timeStringToSeconds(timestamp.end) + 1;
 					const start = timeStringToSeconds(timestamp.start);
 					const end = timeStringToSeconds(timestamp.end);
 					cutVideo(
-						path.join("../sources", video),
+						path.join(sourcesDir, video),
 						start,
 						end,
 						outputSegment,
 						paddedOutputSegment,
-						timestampCallback
+						(err) => {
+							processedTimestamps++;
+							timestampCallback(err);
+						}
 					);
 				},
 				inputCallback
@@ -271,10 +280,12 @@ function processVideos(inputs, output, callback) {
 				return;
 			}
 
-			concatVideos(segmentsDir, segmentFilenames, output, callback);
+			clearInterval(interval);
+			// concatVideos(segmentsDir, segmentFilenames, output, callback);
 		}
 	);
 }
+
 
 const command = process.argv[2];
 
