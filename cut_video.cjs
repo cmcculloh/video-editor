@@ -280,6 +280,7 @@ function processVideos(inputs, output, callback) {
 				return;
 			}
 
+			updateProgressBar(processedTimestamps, ts, outputSegment);
 			clearInterval(interval);
 			// concatVideos(segmentsDir, segmentFilenames, output, callback);
 		}
