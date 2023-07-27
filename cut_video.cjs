@@ -295,7 +295,8 @@ if (command === "convert") {
 		}
 	});
 } else if (command === "process") {
-	processVideos(cutList, `../output/${finalVideo}/rough-cut.mp4`, (err) => {
+	console.log('processing videos...', cutList)
+	processVideos(cutList, `${sourcesDir}output/${finalVideo}/rough-cut.mp4`, (err) => {
 		console.log("processing videos complete");
 		if (err) {
 			console.error(err);
@@ -304,8 +305,7 @@ if (command === "convert") {
 			console.log("Video processing completed successfully.");
 
 			// Move source files to the output directory
-			const sourceDir = "../sources/";
-			const destinationDir = `../output/${finalVideo}/sources/`;
+			const destinationDir = `${sourcesDir}output/${finalVideo}/sources/`;
 
 			if (!fs.existsSync(destinationDir)) {
 				fs.mkdirSync(destinationDir);
@@ -314,7 +314,7 @@ if (command === "convert") {
 			async.each(
 				cutList,
 				(input, moveCallback) => {
-					const sourcePath = path.join(sourceDir, input.video);
+					const sourcePath = path.join(sourcesDir, input.video);
 					const destinationPath = path.join(destinationDir, input.video);
 
 					moveFile(sourcePath, destinationPath, moveCallback);
