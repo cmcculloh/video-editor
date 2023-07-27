@@ -280,8 +280,11 @@ function processVideos(inputs, output, callback) {
 				return;
 			}
 
+			// Updates progress bar one final time so it doesn't look weird when the program finishes
 			updateProgressBar(processedTimestamps, ts, outputSegment);
 			clearInterval(interval);
+
+			// Don't make the rough cut file. We never need it
 			// concatVideos(segmentsDir, segmentFilenames, output, callback);
 		}
 	);
