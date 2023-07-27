@@ -200,7 +200,6 @@ function convertMovToMp4(directory, callback) {
 
 
 
-
 function concatVideos(dir, inputs, output, callback) {
 	const listFile = path.join(dir, "list.txt");
 	const listContent = inputs.map((input) => `file '${path.resolve(input)}'`).join("\n");
@@ -211,12 +210,16 @@ function concatVideos(dir, inputs, output, callback) {
 		.inputOptions("-f", "concat", "-safe", "0")
 		.output(output)
 		.videoCodec("copy")
-		.audioCodec("copy")
+		.audioCodec("aac") // Re-encode audio to AAC
 		.on("end", () => {
 			console.log("\nConcatenation completed.");
 			callback(null);
 		})
-		.on("error", (err) => callback(err))
+		.on("error", (err, stdout, stderr) => {
+			console.error("Error:", err);
+			console.error("ffmpeg stderr:", stderr);
+			callback(err);
+		})
 		.on("progress", (progress) => {
 			process.stdout.write(
 				`Concatenating videos: ${progress.percent.toFixed(2)}% completed\r`
