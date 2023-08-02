@@ -8,7 +8,7 @@
 </head>
 <body>
     <video id="video" controls>
-        <source src="./spiderman.mp4" type="video/mp4">
+        <source src="./EPISODE_02.m4v" type="video/mp4">
         Your browser does not support the video tag.
     </video>
     <div id="currentTime">00:00:00.000</div>
@@ -21,6 +21,17 @@
 
     <pre id="cutlist"></pre>
     <script src="video_editor.js"></script>
+
+    <p>To use this:
+
+        <ol>
+            <li>Edit this file and <pre>video_editor.js</pre> and <pre>../edit_video.cjs</pre> to point at the desired video file (can be m4v, mp4, and maybe mkv)</li>
+            <li>Start the server by <pre>npm videoeditor</pre></li>
+            <li>Use the buttons on screen (forward/backward keys skip by 10 seconds, whereas the buttons skip by frame)</li>
+            <li>Copy the resulting timestamps into <pre>tv-edit-list.cjs</pre></li>
+            <li>Run <pre>npm run doedit</pre></li>
+        </ol>
+    </p>
 </body>
 </html>
 
