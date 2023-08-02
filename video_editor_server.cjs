@@ -8,7 +8,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/get-frame-rate", async (req, res) => {
 	try {
-		const frameRate = await getFrameRate("./public/spiderman.mp4");
+		const frameRate = await getFrameRate("./public/EPISODE_02.m4v");
 		res.json({ frameRate });
 	} catch (error) {
 		console.error("Error fetching frame rate:", error);
