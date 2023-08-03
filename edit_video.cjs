@@ -5,10 +5,15 @@ const ffprobe = require("fluent-ffmpeg").ffprobe;
 const async = require("async");
 const cutList = require("./tv-edit-list.cjs");
 
+console.log('Editing file: ', process.argv[2]);
 console.log("cutList: ", cutList);
 
-const originalVideo = "./public/EPISODE_02.m4v";
-const finalVideo = "EPISODE_02-TV-Edit.m4v";
+const file = process.argv[2];
+const fileWithoutExtension = file.split(".")[0];
+const originalVideo = `./public/${file}`;
+const finalVideo = `${fileWithoutExtension}-TV-Edit.m4v`;
+const introVideo = "./public/INTRO.mp4";
+const outroVideo = "./public/OUTRO.mp4";
 
 // function timeStringToSeconds(timeString) {
 // 	const [hours, minutes, seconds, milliseconds] = timeString.split(":").map(Number);
@@ -108,6 +113,11 @@ function processVideo(input, cutList, output, callback) {
 							callback(err);
 							return;
 						}
+
+						// Add the intro video to the beginning of the segments
+						segmentFilenames.unshift(introVideo);
+						// TODO: Get the Toonami ending credits for here...
+						// segmentFilenames.push(outroVideo);
 
 						concatenateSegments(segmentFilenames, output, callback);
 					}
