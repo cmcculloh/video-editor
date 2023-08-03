@@ -1,3 +1,21 @@
+const urlParams = new URLSearchParams(window.location.search);
+const videoSrc = urlParams.get("src");
+const videoElement = document.getElementById("video");
+
+const setupVideo = async () => {
+	const frameRateFraction = await getFrameRate(videoSrc);
+	console.log("frame rate:", frameRateFraction);
+	setupEventListeners(videoElement, frameRateFraction);
+};
+
+if (videoSrc) {
+	const sourceElement = videoElement.getElementsByTagName("source")[0];
+	console.log("setting source to: ", videoSrc);
+	sourceElement.src = videoSrc;
+	videoElement.addEventListener("loadedmetadata", setupVideo); // Run setupVideo when metadata is loaded
+	videoElement.load(); // Important: Load the video again after setting the source
+}
+
 const video = document.getElementById("video");
 const timestamps = document.getElementById("timestamps");
 const copyCutlistButton = document.getElementById("copy-cutlist");
@@ -5,15 +23,11 @@ const copyCutlistButton = document.getElementById("copy-cutlist");
 let cutStart = null;
 let cutList = [];
 
-(async function () {
-	const frameRateFraction = await getFrameRate();
-	console.log("frame rate:", frameRateFraction);
-	setupEventListeners(frameRateFraction);
-})();
 
-async function getFrameRate() {
+
+async function getFrameRate(videoSrc) {
 	try {
-		const response = await fetch("/get-frame-rate");
+		const response = await fetch(`/get-frame-rate?videoSrc=${encodeURIComponent(videoSrc)}`);
 		const data = await response.json();
 		return data.frameRate;
 	} catch (error) {
@@ -22,7 +36,7 @@ async function getFrameRate() {
 	}
 }
 
-function setupEventListeners(frameRateFraction) {
+function setupEventListeners(videoElement, frameRateFraction) {
 	console.log("setupEventListeners frameRateFraction: ", frameRateFraction);
 	document.addEventListener("keydown", (event) => {
 		const key = event.key;
@@ -31,16 +45,15 @@ function setupEventListeners(frameRateFraction) {
 			console.log("advance", frameRateFraction);
 			event.preventDefault();
 			event.stopPropagation();
-			advanceFrame(1, frameRateFraction);
+			advanceFrame(videoElement, 1, frameRateFraction);
 		} else if (key === "ArrowLeft") {
 			event.preventDefault();
 			event.stopPropagation();
-			advanceFrame(-1, frameRateFraction);
+			advanceFrame(videoElement, -1, frameRateFraction);
 		}
 	});
 
 	const currentTimeElement = document.getElementById("currentTime");
-	const video = document.getElementById("video");
 	const seekBackwardButton = document.getElementById("seekBackward");
 	const seekForwardButton = document.getElementById("seekForward");
 	const toggleCutButton = document.getElementById("toggleCut");
@@ -51,22 +64,22 @@ function setupEventListeners(frameRateFraction) {
 
 	seekBackwardButton.addEventListener("click", () => {
 		console.log("back");
-		advanceFrame(video, frameRateFraction, false);
+		advanceFrame(videoElement, frameRateFraction, false);
 	});
 
 	seekForwardButton.addEventListener("click", () => {
 		console.log("forward");
-		advanceFrame(video, frameRateFraction, true);
+		advanceFrame(videoElement, frameRateFraction, true);
 	});
 
 	toggleCutButton.addEventListener("click", () => {
 		if (cutInProgress) {
-			cutInProgress.end = video.currentTime.toFixed(3);
+			cutInProgress.end = videoElement.currentTime.toFixed(3);
 			cutlist.push(cutInProgress);
 			cutInProgress = null;
 			toggleCutButton.textContent = "Cut Start";
 		} else {
-			cutInProgress = { start: video.currentTime.toFixed(3) };
+			cutInProgress = { start: videoElement.currentTime.toFixed(3) };
 			toggleCutButton.textContent = "Cut End";
 		}
 		updateCutlistDisplay();
@@ -74,8 +87,8 @@ function setupEventListeners(frameRateFraction) {
 	const updateCutlistDisplay = () => {
 		cutlistElement.textContent = JSON.stringify(cutlist, null, 2);
 	};
-	video.addEventListener("timeupdate", () => {
-		currentTimeElement.textContent = formatTime(video.currentTime);
+	videoElement.addEventListener("timeupdate", () => {
+		currentTimeElement.textContent = formatTime(videoElement.currentTime);
 	});
 }
 
@@ -114,4 +127,16 @@ copyCutlistButton.addEventListener("click", () => {
 			console.error("Error copying cutlist: ", err);
 		}
 	);
+});
+
+document.getElementById("speedUp").addEventListener("click", function () {
+	const videoElement = document.getElementById("video");
+	videoElement.playbackRate += 0.5; // Increase playback speed by 0.5
+});
+
+document.getElementById("slowDown").addEventListener("click", function () {
+	const videoElement = document.getElementById("video");
+	if (videoElement.playbackRate > 0.5) {
+		videoElement.playbackRate -= 0.5; // Decrease playback speed by 0.5, but keep it positive
+	}
 });

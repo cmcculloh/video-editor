@@ -7,7 +7,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "videoeditor": "node video_editor_server.cjs && open http://localhost:3000/video_editor.html",
-    "doedit": "node edit_video.cjs"
+    "editvideo": "node edit_video.cjs"
   },
   "author": "",
   "license": "ISC",
