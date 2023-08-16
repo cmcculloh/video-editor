@@ -1,94 +1,96 @@
 module.exports = [
-	// {
-	// 	video: "Wint1.mp4",
-	// 	timestamps: [
-	// 		{ start: "00:00:07", end: "00:00:32" },
-	// 		{ start: "00:01:24", end: "00:01:31" },
-	// 	],
-	// },
-	// {
-	// 	video: "Wint2-005.mp4",
-	// 	timestamps: [{ start: "00:10:22", end: "00:10:46" }],
-	// },
-	// {
-	// 	video: "Wint3-004.mp4",
-	// 	timestamps: [
-	// 		{ start: "00:04:15", end: "00:04:35" },
-	// 		{ start: "00:09:30", end: "00:10:16" },
-	// 	],
-	// },
-	// {
-	// 	video: "Wint3A-003.mp4",
-	// 	timestamps: [
-	// 		{ start: "00:01:16", end: "00:01:43" },
-	// 		{ start: "00:03:20", end: "00:03:50" },
-	// 		{ start: "00:07:35", end: "00:08:04" },
-	// 	],
-	// },
 	{
-		video: "Wint3B-002.mp4",
-		timestamps: [
-			{ start: "00:00:10", end: "00:00:47" },
-			// { start: "00:07:20", end: "00:07:47" },
-		],
+		video: "E13.MP4",
+		timestamps: [{ start: "00:00:36", end: "00:01:02" }],
 	},
-	// {
-	// 	video: "Wint4-009.mp4",
-	// 	timestamps: [
-	// 		{ start: "00:05:17", end: "00:06:06" },
-	// 		{ start: "00:08:58", end: "00:09:55" },
-	// 		{ start: "00:11:26", end: "00:11:48" },
-	// 	],
-	// },
 	{
-		video: "Wint5-014.mp4",
+		video: "E1.MP4",
 		timestamps: [
-			// { start: "00:00:00", end: "00:00:02" },
-			{ start: "00:06:48", end: "00:07:12" },
-			// { start: "00:07:31", end: "00:07:37" },
-			// { start: "00:11:05", end: "00:11:25" },
-		],
-	},
-	// Note: Wint6 is a special case with Fast Forward and additional text on the screen.
-	// {
-	// 	video: "Wint7-018.mp4",
-	// 	timestamps: [{ start: "00:00:45", end: "00:01:06" }],
-	// },
-	// {
-	// 	video: "Wint8.mp4",
-	// 	timestamps: [
-	// 		{ start: "00:03:20", end: "00:03:31" },
-	// 		{ start: "00:03:56", end: "00:04:12" },
-	// 	],
-	// },
-	{
-		video: "Wint9-015.mp4",
-		timestamps: [{ start: "00:05:32", end: "00:06:12" }],
-	},
-	// {
-	// 	video: "Wint10-010.mp4",
-	// 	timestamps: [
-	// 		{ start: "00:00:40", end: "00:01:13" },
-	// 		{ start: "00:02:47", end: "00:03:24" },
-	// 		{ start: "00:04:40", end: "00:05:13" },
-	// 		{ start: "00:10:55", end: "00:11:29" },
-	// 	],
-	// },
-	{
-		video: "Wint11-016.mp4",
-		timestamps: [
-			{ start: "00:08:34", end: "00:09:12" },
-			// { start: "00:11:24", end: "00:11:37" },
+			{ start: "00:02:39", end: "00:02:58" },
+			{ start: "00:03:14", end: "00:03:24" },
+			{ start: "00:04:14", end: "00:04:42" },
+			{ start: "00:07:03", end: "00:07:11" },
+			{ start: "00:10:21", end: "00:10:46" },
 		],
 	},
 	{
-		video: "Wint12-012.mp4",
+		video: "E2.MP4",
 		timestamps: [
-			{ start: "00:03:33", end: "00:04:15" },
-			// { start: "00:04:26", end: "00:04:33" },
-			// { start: "00:08:09", end: "00:08:53" },
-			// { start: "00:09:38", end: "00:09:54" },
+			{ start: "00:00:44", end: "00:01:18" },
+			{ start: "00:01:27", end: "00:02:36" },
+			{ start: "00:02:52", end: "00:03:38" },
+			{ start: "00:03:56", end: "00:04:04" },
 		],
 	},
-	// Note: Wint6 is a special case with Fast Forward and additional text on the screen.
+	{
+		video: "E3.MP4",
+		timestamps: [{ start: "00:05:05", end: "00:05:35" }],
+	},
+	{
+		video: "E5.MP4",
+		timestamps: [
+			{ start: "00:01:31", end: "00:01:37" },
+			{ start: "00:03:27", end: "00:03:55" },
+			{ start: "00:04:04", end: "00:04:08" },
+			{ start: "00:11:24", end: "00:11:48" },
+		],
+	},
+	{
+		video: "E6.MP4",
+		timestamps: [
+			{ start: "00:00:04", end: "00:00:10" },
+			{ start: "00:00:50", end: "00:01:19" },
+		],
+	},
+	{
+		video: "E7.MP4",
+		timestamps: [{ start: "00:04:04", end: "00:04:35" }],
+	},
+	{
+		video: "E8.MP4",
+		timestamps: [
+			{ start: "00:03:33", end: "00:03:54" },
+			{ start: "00:10:22", end: "00:11:11" },
+		],
+	},
+	{
+		video: "E9.MP4",
+		timestamps: [{ start: "00:03:00", end: "00:03:51" }],
+	},
+	{
+		video: "E10.MP4",
+		timestamps: [
+			{ start: "00:00:43", end: "00:01:22" },
+			{ start: "00:08:27", end: "00:08:57" },
+		],
+	},
+	{
+		video: "E12.MP4",
+		timestamps: [{ start: "00:04:59", end: "00:05:15" }],
+	},
+	{
+		video: "E13.MP4",
+		timestamps: [
+			{ start: "00:00:35", end: "00:01:40" },
+			{ start: "00:02:21", end: "00:02:40" },
+			{ start: "00:03:02", end: "00:03:20" },
+			{ start: "00:03:28", end: "00:03:46" },
+			{ start: "00:04:57", end: "00:05:12" },
+		],
+	},
+	{
+		video: "E14.MP4",
+		timestamps: [
+			{ start: "00:00:53", end: "00:01:07" },
+			{ start: "00:03:15", end: "00:03:21" },
+		],
+	},
+	{
+		video: "E15.MP4",
+		timestamps: [
+			{ start: "00:00:06", end: "00:00:54" },
+			{ start: "00:00:59", end: "00:01:34" },
+			{ start: "00:01:58", end: "00:02:25" },
+		],
+	},
 ];
