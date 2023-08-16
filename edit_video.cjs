@@ -5,15 +5,14 @@ const ffprobe = require("fluent-ffmpeg").ffprobe;
 const async = require("async");
 const cutList = require("./tv-edit-list.cjs");
 
-console.log('Editing file: ', process.argv[2]);
+console.log("Editing file: ", process.argv[2]);
 console.log("cutList: ", cutList);
 
 const file = process.argv[2];
 const fileWithoutExtension = file.split(".")[0];
 const originalVideo = `./public/${file}`;
 const finalVideo = `${fileWithoutExtension}-TV-Edit.m4v`;
-const introVideo = "./public/INTRO.mp4";
-const outroVideo = "./public/OUTRO.mp4";
+const introSource = "./public/PR_INTRO.mp4";
 
 // function timeStringToSeconds(timeString) {
 // 	const [hours, minutes, seconds, milliseconds] = timeString.split(":").map(Number);
@@ -24,13 +23,14 @@ function timeStringToSeconds(timeString) {
 	return parseFloat(timeString);
 }
 
-function cutVideo(input, start, end, output, callback) {
+function cutVideo(input, start, end, output, callback, videoCodec = "copy", audioCodec = "aac") {
 	ffmpeg(input)
 		.setStartTime(start)
 		.setDuration(end - start)
 		.output(output)
-		.videoCodec("copy")
-		.audioCodec("aac")
+		.videoCodec(videoCodec)
+		.audioCodec(audioCodec)
+		.size("720x456")
 		.on("end", () => {
 			callback(null);
 		})
@@ -114,11 +114,6 @@ function processVideo(input, cutList, output, callback) {
 							return;
 						}
 
-						// Add the intro video to the beginning of the segments
-						segmentFilenames.unshift(introVideo);
-						// TODO: Get the Toonami ending credits for here...
-						// segmentFilenames.push(outroVideo);
-
 						concatenateSegments(segmentFilenames, output, callback);
 					}
 				);
@@ -127,6 +122,7 @@ function processVideo(input, cutList, output, callback) {
 	});
 }
 
+// concatenateSegments([introSource], finalVideo, (err) => console.log(err));
 function concatenateSegments(segmentFilenames, output, callback) {
 	const listFile = path.join("temp_segments", "list.txt");
 	const listContent = segmentFilenames.map((input) => `file '${path.resolve(input)}'`).join("\n");
