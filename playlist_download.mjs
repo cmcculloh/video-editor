@@ -26,7 +26,8 @@ const folderName = process.argv[3];
 const flag = process.argv[4];
 const cookiesFilePath = "cookies.txt";
 // Change this to fit your environment
-const defaultRoot = "/volume1/McCullohShare/Plex/TV/";
+// const defaultRoot = "/volume1/McCullohShare/Plex/TV/";
+const defaultRoot = "/Volumes/McCullohShare/Plex/TV/";
 
 if (!fs.existsSync("downloads")) {
 	fs.mkdirSync("downloads");
