@@ -1,5 +1,7 @@
 node_modules
 *.mp4
+*.mkv
+*.m4v
 .DS_Store
 package-lock.json
 temp_segments
