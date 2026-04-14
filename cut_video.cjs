@@ -222,7 +222,7 @@ function concatVideos(dir, inputs, output, callback) {
 		})
 		.on("progress", (progress) => {
 			process.stdout.write(
-				`Concatenating videos: ${progress.percent.toFixed(2)}% completed\r`
+				`Concatenating videos: ${progress.timemark}\r`
 			);
 		})
 		.run();
@@ -234,10 +234,9 @@ function processVideos(inputs, output, callback) {
 	let segmentFilenames = [];
 	let videoIndex = 0;
 
-	// Count total timestamps
 	let processedTimestamps = 0;
 	let outputSegment = "";
-	let ts = inputs.reduce((acc, input) => acc = [...acc, ...input.timestamps], []);
+	let ts = inputs.reduce((acc, input) => (acc = [...acc, ...input.timestamps]), []);
 	let interval = setInterval(() => {
 		updateProgressBar(processedTimestamps, ts, outputSegment);
 	}, 1000);
@@ -250,19 +249,24 @@ function processVideos(inputs, output, callback) {
 			async.eachSeries(
 				timestamps,
 				(timestamp, timestampCallback) => {
-					const index = videoIndex++;
-					outputSegment = path.join(segmentsDir, `segment_${index}.mp4`);
+					const start = timestamp.start.replace(/:/g, "-");
+					const end = timestamp.end.replace(/:/g, "-");
+					const index = `S${videoIndex++}`;
+					outputSegment = path.join(
+						segmentsDir,
+						`${index}_${video}___${start}_${end}.mp4`
+					);
 					segmentFilenames.push(outputSegment);
 					const paddedOutputSegment = path.join(
 						paddedSegmentsDir,
 						`segment_${index}.mp4`
 					);
-					const start = timeStringToSeconds(timestamp.start);
-					const end = timeStringToSeconds(timestamp.end);
+					const startTime = timeStringToSeconds(timestamp.start);
+					const endTime = timeStringToSeconds(timestamp.end);
 					cutVideo(
 						path.join(sourcesDir, video),
-						start,
-						end,
+						startTime,
+						endTime,
 						outputSegment,
 						paddedOutputSegment,
 						(err) => {
@@ -279,13 +283,8 @@ function processVideos(inputs, output, callback) {
 				callback(err);
 				return;
 			}
-
-			// Updates progress bar one final time so it doesn't look weird when the program finishes
 			updateProgressBar(processedTimestamps, ts, outputSegment);
 			clearInterval(interval);
-
-			// Don't make the rough cut file. We never need it
-			// concatVideos(segmentsDir, segmentFilenames, output, callback);
 		}
 	);
 }

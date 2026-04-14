@@ -1,0 +1,16 @@
+{
+  "videoSrc": "SAO/S01E17_-_Captive_Queen.mkv",
+  "cutList": [
+    {
+      "start": "1101.000",
+      "end": "1116.000"
+    },
+    {
+      "start": "1118.706",
+      "end": "1123.399"
+    }
+  ],
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-04-14T19:49:13.789Z"
+}

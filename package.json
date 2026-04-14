@@ -5,8 +5,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "videoeditor": "node video_editor_server.cjs && open http://localhost:3000/video_editor.html",
+    "start": "node video_editor_server.cjs",
     "editvideo": "node edit_video.cjs"
   },
   "author": "",
@@ -26,5 +25,8 @@
     "youtube-dl-exec": "^2.4.0",
     "yt-dlp": "^0.0.6",
     "ytdl-core": "^4.11.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.37.1"
   }
 }

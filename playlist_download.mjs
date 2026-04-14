@@ -2,6 +2,8 @@
 // node playlist_download.mjs "https://www.youtube.com/@postmodernjukebox/videos" "PostmodernJukebox"
 // node playlist_download.mjs "https://www.youtube.com/playlist?list=PLeNLZ73biGeuPLmw2BtvPysAZ9PEHOo3e" become-elite
 
+// node playlist_download.mjs "https://www.youtube.com/playlist?list=PLR1m8wT98sb56ynTxCxD_OeJBMl-C0Iww" water-color
+
 import { exec, execFile } from "child_process";
 import util from "util";
 import fs from "fs";
@@ -24,7 +26,8 @@ const execPromisified = (command) => {
 const playlistUrl = process.argv[2];
 const folderName = process.argv[3];
 const flag = process.argv[4];
-const cookiesFilePath = "cookies.txt";
+const cookiesFilePath = "www.youtube.com_cookies.txt";
+// const cookiesFilePath = "cookies.txt";
 // Change this to fit your environment
 // const defaultRoot = "/volume1/McCullohShare/Plex/TV/";
 const defaultRoot = "/Volumes/McCullohShare/Plex/TV/";
@@ -107,7 +110,25 @@ async function downloadThumbnail(thumbnailUrl, outputPath) {
 async function downloadVideo(videoInfo, filename) {
 	return new Promise(async (resolve, reject) => {
 		try {
+			console.log("Video URL:", videoInfo.url); // Log Video URL
+
+			const tempFilename = `${filename}.temp`;
+
+			const ytdlpcommand = `yt-dlp -i -f best --cookies ${cookiesFilePath} --get-url https://www.youtube.com/watch?v=${videoInfo.id}`;
+			const { stdout: videoUrl, stderr: ytDlpError } = await execPromisified(
+				ytdlpcommand,
+				{
+					maxBuffer: 10 * 1024 * 1024,
+				}
+			);
+			console.log("yt-dlp output:", videoUrl); // Check yt-dlp Command Output
+			console.error("yt-dlp error:", ytDlpError);
+
 			const response = await fetch(videoInfo.url);
+			if (!response.ok) {
+				console.error("Fetch error:", response.statusText); // Check for Errors during Fetch
+				return resolve();
+			}
 			const totalBytes = parseInt(response.headers.get("content-length"), 10);
 			let downloadedBytes = 0;
 
@@ -130,7 +151,7 @@ async function downloadVideo(videoInfo, filename) {
 				);
 			};
 
-			const tempFilename = `${filename}.temp`;
+			// const tempFilename = `${filename}.temp`;
 			const fileStream = fs.createWriteStream(tempFilename);
 			response.body.on("data", (chunk) => {
 				downloadedBytes += chunk.length;
@@ -138,6 +159,12 @@ async function downloadVideo(videoInfo, filename) {
 			});
 
 			await pipeline(response.body, fileStream);
+
+			// Check for the existence and content of the temporary file
+			if (!fs.existsSync(tempFilename) || fs.statSync(tempFilename).size === 0) {
+				console.error("Temporary file does not exist or is empty");
+				return resolve(); // Resolve the promise to continue with the next video
+			}
 
 			const thumbnailFilename = `${path.basename(filename, ".mp4")}.jpg`;
 			const thumbnailOutputPath = path.join(outputDir, thumbnailFilename);

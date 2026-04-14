@@ -124,5 +124,9 @@ npm install
 
 The "edit_video.cjs" script reads the cutlist from "tv-edit-list.cjs", processes the input video by cutting the specified segments, and concatenates the remaining segments to create a new output video. The script uses the `fluent-ffmpeg` library to perform video editing operations, and the `async` library to handle asynchronous processing.
 
+### BONUS STEP: Custom Intro
 
+You can add a custom intro to your TV edits so that when you start watching one you know immediately whether you are watching the TV edit or not.
+
+1. Create an `./public/INTRO.mp4` file
 

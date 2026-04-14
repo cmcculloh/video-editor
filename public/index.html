@@ -4,36 +4,168 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Editor</title>
+    <link rel="icon" href="imgs/grid_0.webp" type="image/webp">
     <link rel="stylesheet" href="video_editor.css">
 </head>
 <body>
-    <video id="video" controls>
-        <source src="" type="video/mp4">
-        Your browser does not support the video tag.
-    </video>
-    <div id="currentTime">00:00:00.000</div>
-        <button id="seekBackward">Seek Backward</button>
-        <button id="seekForward">Seek Forward</button>
-        <button id="speedUp">Speed Up</button>
-        <button id="slowDown">Slow Down</button>
-    <div>
-        <button id="toggleCut">Cut Start</button><button id="copy-cutlist">Copy Cutlist</button>
-    </div>
+    <main class="editor-shell">
+        <header class="editor-header">
+            <div>
+                <p class="eyebrow">Cutlist Studio</p>
+                <h1>Video Editor</h1>
+            </div>
+            <p id="selected-video-label" class="selection-pill">No video loaded</p>
+        </header>
 
+        <section class="setup-panel" aria-label="Media setup">
+            <label class="field field--wide" for="video-select">
+                <span>Video</span>
+                <select id="video-select">
+                    <option value="">Choose a video...</option>
+                </select>
+            </label>
+            <label class="field" for="intro-select">
+                <span>Intro</span>
+                <select id="intro-select">
+                    <option value="">None</option>
+                </select>
+            </label>
+            <label class="field" for="outro-select">
+                <span>Outro</span>
+                <select id="outro-select">
+                    <option value="">None</option>
+                </select>
+            </label>
+        </section>
 
-    <pre id="cutlist"></pre>
+        <section class="asset-preview-grid" aria-label="Intro and outro previews">
+            <article class="asset-preview">
+                <div class="asset-preview__copy">
+                    <span>Selected intro</span>
+                    <strong id="intro-selected">None</strong>
+                </div>
+                <video id="intro-preview" controls playsinline hidden></video>
+            </article>
+            <article class="asset-preview">
+                <div class="asset-preview__copy">
+                    <span>Selected outro</span>
+                    <strong id="outro-selected">None</strong>
+                </div>
+                <video id="outro-preview" controls playsinline hidden></video>
+            </article>
+        </section>
+
+        <section class="workspace">
+            <section class="preview-column" aria-label="Source editor">
+                <div class="video-stage">
+                    <video id="video" controls playsinline>
+                        <source src="">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="empty-state">
+                        <img src="imgs/grid_0.webp" alt="">
+                        <div class="empty-state__copy">
+                            <p class="eyebrow">Ready</p>
+                            <h2>Choose a video to start cutting.</h2>
+                            <p>Arrow keys step frame by frame after a file is loaded.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="viewer-readout" class="viewer-readout" aria-label="Viewer readout">
+                    <div class="readout-item">
+                        <span>Timecode</span>
+                        <strong id="currentTime">00:00:00.000</strong>
+                    </div>
+                    <div class="readout-item">
+                        <span>Seconds</span>
+                        <strong id="currentSeconds">0.000000</strong>
+                    </div>
+                    <div class="readout-item">
+                        <span>Frame</span>
+                        <strong id="currentFrame">0</strong>
+                    </div>
+                    <div class="readout-item">
+                        <span>Frame time</span>
+                        <strong id="currentFrameTime">00:00:00.000000</strong>
+                    </div>
+                    <div class="readout-item">
+                        <span>FPS</span>
+                        <strong id="currentFps">Unknown</strong>
+                    </div>
+                </div>
+
+                <div class="control-surface" aria-label="Editing controls">
+                    <div class="control-group">
+                        <button id="seekBackward" class="button button--secondary" disabled>Back 10s</button>
+                        <button id="seekForward" class="button button--secondary" disabled>Forward 10s</button>
+                        <label class="toggle">
+                            <input type="checkbox" id="frame-step-seek">
+                            <span>Frame seek</span>
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <button id="slowDown" class="button button--ghost" disabled>Slower</button>
+                        <button id="speedUp" class="button button--ghost" disabled>Faster</button>
+                        <span id="playback-rate" class="rate-pill">1.0x</span>
+                    </div>
+                    <div class="control-group control-group--primary">
+                        <button id="toggleCut" class="button button--danger" disabled>Cut Start</button>
+                        <button id="save-cutlist" class="button button--secondary" disabled>Save Cutlist</button>
+                        <button id="edit-video" class="button button--primary" disabled>Edit Video</button>
+                        <label class="toggle toggle--warning">
+                            <input type="checkbox" id="debug-black-cuts">
+                            <span>Debug black cuts</span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="side-rail" aria-label="Cutlist and output">
+                <section class="panel">
+                    <div class="panel-header">
+                        <h2>Cutlist</h2>
+                        <span id="cut-count" class="meta-pill">0 cuts</span>
+                    </div>
+                    <textarea id="cutlist" rows="14" cols="80" spellcheck="false"></textarea>
+                    <p class="hint">Each saved range is removed from the final edit.</p>
+                </section>
+
+                <section id="edit-progress" class="edit-progress panel" hidden>
+                    <div class="edit-progress__header">
+                        <span id="edit-progress-label">Preparing edit...</span>
+                        <span id="edit-progress-percent">0%</span>
+                    </div>
+                    <progress id="edit-progress-bar" max="100" value="0"></progress>
+                    <div id="segment-progress" class="edit-progress__segment" hidden>
+                        <div class="edit-progress__header">
+                            <span id="segment-progress-label">Preparing segment...</span>
+                            <span id="segment-progress-percent">0%</span>
+                        </div>
+                        <progress id="segment-progress-bar" max="100" value="0"></progress>
+                        <div id="segment-progress-eta" class="edit-progress__eta"></div>
+                    </div>
+                </section>
+
+                <pre id="status" class="status-panel" aria-live="polite"></pre>
+
+                <section class="panel final-panel">
+                    <div class="panel-header">
+                        <h2>Final Edit</h2>
+                    </div>
+                    <video id="final-video" controls playsinline hidden></video>
+                    <p id="final-empty" class="hint">Completed exports appear here.</p>
+                </section>
+            </aside>
+        </section>
+
+        <footer class="editor-footer">
+            <span>Arrow keys: previous and next frame</span>
+            <span>Seek buttons: 10 seconds or one frame</span>
+            <span>Cut Start, Cut End, Save, Edit</span>
+        </footer>
+    </main>
+
     <script src="video_editor.js"></script>
-
-    <p>To use this:
-
-        <ol>
-            <li>Edit this file and <pre>video_editor.js</pre> and <pre>../edit_video.cjs</pre> to point at the desired video file (can be m4v, mp4, and maybe mkv)</li>
-            <li>Start the server by <pre>npm videoeditor</pre></li>
-            <li>Use the buttons on screen (forward/backward keys skip by 10 seconds, whereas the buttons skip by frame)</li>
-            <li>Copy the resulting timestamps into <pre>tv-edit-list.cjs</pre></li>
-            <li>Run <pre>npm run doedit</pre></li>
-        </ol>
-    </p>
 </body>
 </html>
-
