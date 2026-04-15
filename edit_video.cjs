@@ -4,7 +4,14 @@ const { spawn } = require("child_process");
 const ffmpeg = require("fluent-ffmpeg");
 const ffprobe = require("fluent-ffmpeg").ffprobe;
 const async = require("async");
-const { getCutListConfigForVideo, getIntroOutroPath, normalizeVideoPath } = require("./tv-edit-list.cjs");
+const {
+	CUT_MODE_REMOVE,
+	CUT_MODE_REPLACE,
+	DEFAULT_REPLACEMENT_COLOR,
+	getCutListConfigForVideo,
+	getIntroOutroPath,
+	normalizeVideoPath,
+} = require("./tv-edit-list.cjs");
 
 const file = process.argv[2];
 
@@ -187,6 +194,72 @@ function createBlackVideo(duration, output, videoInfo, callback) {
 	});
 }
 
+function createColorReplacementVideo(input, segment, output, videoInfo, callback) {
+	const duration = segment.end - segment.start;
+	const startedAt = Date.now();
+	const child = spawn("ffmpeg", [
+		"-y",
+		"-ss",
+		String(segment.start),
+		"-t",
+		String(duration),
+		"-i",
+		input,
+		"-f",
+		"lavfi",
+		"-i",
+		`color=c=${hexColorToFfmpegColor(segment.color)}:s=${videoInfo.width}x${videoInfo.height}:r=${videoInfo.frameRate}:d=${duration}`,
+		"-map",
+		"1:v:0",
+		"-map",
+		"0:a:0?",
+		"-t",
+		String(duration),
+		"-shortest",
+		"-c:v",
+		"libx264",
+		"-pix_fmt",
+		"yuv420p",
+		"-c:a",
+		"aac",
+		output,
+	]);
+	let stderr = "";
+	let timer = null;
+
+	if (typeof callback.onProgress === "function") {
+		timer = setInterval(() => {
+			const elapsedSeconds = (Date.now() - startedAt) / 1000;
+			const estimatedWorkSeconds = estimateSegmentWorkSeconds(duration, videoInfo, "color");
+			callback.onProgress({
+				percent: Math.min(95, (elapsedSeconds / estimatedWorkSeconds) * 100),
+			});
+		}, 1000);
+	}
+
+	child.stderr.on("data", (data) => {
+		stderr += data.toString();
+	});
+	child.on("error", (error) => {
+		if (timer) {
+			clearInterval(timer);
+		}
+		callback(error);
+	});
+	child.on("close", (code) => {
+		if (timer) {
+			clearInterval(timer);
+		}
+
+		if (code === 0) {
+			callback(null);
+			return;
+		}
+
+		callback(new Error(`ffmpeg color replacement failed with exit code ${code}.\n${stderr}`));
+	});
+}
+
 function processVideo(input, cutList, output, callback, options = {}) {
 	let segments = [];
 
@@ -242,7 +315,7 @@ function processVideo(input, cutList, output, callback, options = {}) {
 				segmentFilenames.push(outputSegment);
 				const segmentProgressBase = 15;
 				const segmentProgressRange = 70;
-				const segmentLabel = segment.type === "black" ? "Creating black cut marker" : "Cutting video segment";
+				const segmentLabel = getSegmentLabel(segment.type);
 				const segmentTracker = createSegmentProgressTracker({
 					index,
 					total: segments.length,
@@ -269,6 +342,11 @@ function processVideo(input, cutList, output, callback, options = {}) {
 					return;
 				}
 
+				if (segment.type === "color") {
+					createColorReplacementVideo(input, segment, outputSegment, videoInfo, completeSegment);
+					return;
+				}
+
 				cutVideo(input, segment.start, segment.end, outputSegment, completeSegment, {
 					videoCodec: "libx264",
 					audioCodec: "aac",
@@ -289,6 +367,18 @@ function processVideo(input, cutList, output, callback, options = {}) {
 			}
 		);
 	});
+}
+
+function getSegmentLabel(type) {
+	if (type === "black") {
+		return "Creating black cut marker";
+	}
+
+	if (type === "color") {
+		return "Replacing video with color";
+	}
+
+	return "Cutting video segment";
 }
 
 function createSegmentProgressTracker(options) {
@@ -369,7 +459,7 @@ function parseTimemark(timemark) {
 function estimateSegmentWorkSeconds(duration, videoInfo, type) {
 	const pixels = (videoInfo.width || 1280) * (videoInfo.height || 720);
 	const resolutionFactor = Math.max(0.5, pixels / (1280 * 720));
-	const typeFactor = type === "black" ? 0.35 : 0.8;
+	const typeFactor = type === "black" ? 0.35 : type === "color" ? 0.55 : 0.8;
 
 	return Math.max(2, duration * resolutionFactor * typeFactor);
 }
@@ -394,13 +484,24 @@ function createTimelineSegments(cutList, videoDurationInSeconds, debugBlackCuts)
 	cutList.forEach((timestamp) => {
 		const start = clampTime(timeStringToSeconds(timestamp.start), videoDurationInSeconds);
 		const end = clampTime(timeStringToSeconds(timestamp.end), videoDurationInSeconds);
+		const mode = timestamp.mode === CUT_MODE_REPLACE ? CUT_MODE_REPLACE : CUT_MODE_REMOVE;
+		const effectiveStart = Math.max(start, currentStart);
 
 		if (start > currentStart) {
 			segments.push({ type: "video", start: currentStart, end: start });
 		}
 
-		if (debugBlackCuts && end > currentStart) {
-			segments.push({ type: "black", start: Math.max(start, currentStart), end });
+		if (end > currentStart) {
+			if (mode === CUT_MODE_REPLACE) {
+				segments.push({
+					type: "color",
+					start: effectiveStart,
+					end,
+					color: timestamp.color || DEFAULT_REPLACEMENT_COLOR,
+				});
+			} else if (debugBlackCuts) {
+				segments.push({ type: "black", start: effectiveStart, end });
+			}
 		}
 
 		currentStart = Math.max(currentStart, end);
@@ -415,6 +516,10 @@ function createTimelineSegments(cutList, videoDurationInSeconds, debugBlackCuts)
 
 function clampTime(time, duration) {
 	return Math.min(Math.max(time, 0), duration);
+}
+
+function hexColorToFfmpegColor(color) {
+	return `0x${String(color || DEFAULT_REPLACEMENT_COLOR).replace("#", "")}`;
 }
 
 function getVideoInfo(metadata) {

@@ -3,6 +3,9 @@ const path = require("path");
 
 const cutlistsDir = path.join(__dirname, "cutlists");
 const introsAndOutrosDir = path.join(__dirname, "public", "intros-and-outros");
+const CUT_MODE_REMOVE = "remove";
+const CUT_MODE_REPLACE = "replace";
+const DEFAULT_REPLACEMENT_COLOR = "#000000";
 
 function normalizeVideoPath(videoFile) {
 	if (!videoFile || typeof videoFile !== "string") {
@@ -92,21 +95,63 @@ function normalizeCutList(cutList) {
 		.map((cut, index) => {
 			const start = Number.parseFloat(cut.start);
 			const end = Number.parseFloat(cut.end);
+			const mode = normalizeCutMode(cut.mode);
 
 			if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
 				throw new Error(`Invalid cut at index ${index}.`);
 			}
 
-			return {
+			const normalizedCut = {
 				start: start.toFixed(6),
 				end: end.toFixed(6),
+				mode,
 			};
+
+			if (mode === CUT_MODE_REPLACE) {
+				normalizedCut.color = normalizeCutColor(cut.color || DEFAULT_REPLACEMENT_COLOR, index);
+			}
+
+			return normalizedCut;
 		})
 		.sort((a, b) => Number.parseFloat(a.start) - Number.parseFloat(b.start));
 }
 
+function normalizeCutMode(mode) {
+	if (!mode || mode === CUT_MODE_REMOVE) {
+		return CUT_MODE_REMOVE;
+	}
+
+	if (mode === CUT_MODE_REPLACE) {
+		return CUT_MODE_REPLACE;
+	}
+
+	throw new Error(`Invalid cut mode: ${mode}`);
+}
+
+function normalizeCutColor(color, index) {
+	if (typeof color !== "string") {
+		throw new Error(`Invalid replacement color at cut ${index}.`);
+	}
+
+	const trimmed = color.trim();
+	const shortMatch = trimmed.match(/^#([0-9a-f]{3})$/i);
+
+	if (shortMatch) {
+		return `#${shortMatch[1].split("").map((character) => character + character).join("")}`.toLowerCase();
+	}
+
+	if (!/^#[0-9a-f]{6}$/i.test(trimmed)) {
+		throw new Error(`Invalid replacement color at cut ${index}. Use a hex color like #00aaff.`);
+	}
+
+	return trimmed.toLowerCase();
+}
+
 module.exports = {
+	CUT_MODE_REMOVE,
+	CUT_MODE_REPLACE,
 	cutlistsDir,
+	DEFAULT_REPLACEMENT_COLOR,
 	getCutListConfigForVideo,
 	getIntroOutroPath,
 	getCutListForVideo,

@@ -41,6 +41,16 @@ const cutPointTimeElement = document.getElementById("cut-point-time");
 const cutPointInputElement = document.getElementById("cut-point-input");
 const cutPointUsePlayheadButton = document.getElementById("cut-point-use-playhead");
 const cutPointClearButton = document.getElementById("cut-point-clear");
+const cutOptionsEditorElement = document.getElementById("cut-options-editor");
+const cutOptionsLabelElement = document.getElementById("cut-options-label");
+const cutOptionsSummaryElement = document.getElementById("cut-options-summary");
+const cutActionSelectElement = document.getElementById("cut-action-select");
+const cutColorInputElement = document.getElementById("cut-color-input");
+const cutColorPickVideoButton = document.getElementById("cut-color-pick-video");
+const cutColorSwatchElement = document.getElementById("cut-color-swatch");
+const mergePreviousCutButton = document.getElementById("merge-previous-cut");
+const mergeNextCutButton = document.getElementById("merge-next-cut");
+const deleteCutButton = document.getElementById("delete-cut");
 const toastRegionElement = document.getElementById("toast-region");
 const seekBackwardButton = document.getElementById("seekBackward");
 const seekForwardButton = document.getElementById("seekForward");
@@ -65,6 +75,12 @@ const CUT_POINT_MIN_GAP = 0.001;
 const PREVIEW_SKIP_EPSILON = 0.03;
 const MIN_TIMELINE_WINDOW_SECONDS = 2;
 const TIMELINE_ZOOM_FACTOR = 2;
+const TIMELINE_WHEEL_LINE_PIXELS = 18;
+const TIMELINE_WHEEL_PAGE_PIXELS = 240;
+const TIMELINE_THUMBNAIL_REFRESH_DELAY = 180;
+const CUT_MODE_REMOVE = "remove";
+const CUT_MODE_REPLACE = "replace";
+const DEFAULT_REPLACEMENT_COLOR = "#000000";
 
 let cutStart = null;
 let cutList = [];
@@ -72,11 +88,14 @@ let timelineDuration = 0;
 let timelineViewStart = 0;
 let timelineViewEnd = 0;
 let timelineThumbnailRun = 0;
+let timelineThumbnailRefreshTimer = null;
 let timelineScrubbing = false;
+let selectedCutIndex = null;
 let selectedCutPoint = null;
 let activeCutPointDrag = null;
 let previewSkipFrame = null;
 let lastSkippedCutEnd = null;
+let videoColorPickActive = false;
 
 document.body.classList.toggle("has-video", Boolean(videoSrc));
 selectedVideoLabel.textContent = videoSrc ? getFileName(videoSrc) : "No video loaded";
@@ -286,9 +305,12 @@ function setupEventListeners(videoElement, frameRateFraction) {
 	});
 
 	toggleCutButton.addEventListener("click", () => {
+		let nextSelectedCutIndex = null;
+
 		if (cutInProgress) {
 			cutInProgress.end = getFrameTime(getFrameNumber(videoElement.currentTime, frameRate), frameRate).toFixed(6);
-			cutList.push(cutInProgress);
+			cutInProgress.mode = CUT_MODE_REMOVE;
+			nextSelectedCutIndex = cutList.push(cutInProgress) - 1;
 			cutInProgress = null;
 			toggleCutButton.textContent = "Cut Start";
 		} else {
@@ -298,6 +320,10 @@ function setupEventListeners(videoElement, frameRateFraction) {
 			toggleCutButton.textContent = "Cut End";
 		}
 		updateCutlistDisplay();
+
+		if (nextSelectedCutIndex !== null) {
+			selectCut(nextSelectedCutIndex, { seek: false });
+		}
 	});
 	videoElement.addEventListener("loadedmetadata", updateViewerReadout);
 	videoElement.addEventListener("seeked", updateViewerReadout);
@@ -316,10 +342,12 @@ function setupEventListeners(videoElement, frameRateFraction) {
 }
 
 function updateCutlistDisplay() {
+	syncSelectionWithCutList();
 	cutlistElement.value = JSON.stringify(cutList, null, "\t");
 	updateCutCount(cutList.length);
 	renderCutOverlays(cutList);
 	updateCutPointEditor();
+	updateCutOptionsEditor();
 	updatePreviewSkipState(cutList);
 }
 
@@ -328,6 +356,8 @@ function readCutlistFromEditor() {
 
 	if (!text) {
 		updateCutCount(0);
+		renderCutOverlays([]);
+		updatePreviewSkipState([]);
 		return [];
 	}
 
@@ -341,7 +371,6 @@ function readCutlistFromEditor() {
 	updateCutCount(editedCutList.length);
 	renderCutOverlays(editedCutList);
 	timelineElement.classList.remove("timeline--invalid");
-	updateCutPointEditor();
 	updatePreviewSkipState(editedCutList);
 	return editedCutList;
 }
@@ -349,12 +378,13 @@ function readCutlistFromEditor() {
 cutlistElement.addEventListener("input", () => {
 	try {
 		cutList = readCutlistFromEditor();
-		renderCutOverlays(cutList);
+		syncSelectionWithCutList();
 		updateCutPointEditor();
+		updateCutOptionsEditor();
 	} catch (error) {
 		cutCountElement.textContent = "Check JSON";
 		timelineElement.classList.add("timeline--invalid");
-		hideCutPointEditor();
+		clearSelectedCut();
 	}
 });
 
@@ -363,7 +393,7 @@ timelineElement.addEventListener("pointerdown", (event) => {
 		return;
 	}
 
-	if (event.target.closest(".timeline__cut-handle")) {
+	if (event.target.closest(".timeline__cut-handle, .timeline__cut-marker")) {
 		return;
 	}
 
@@ -395,6 +425,8 @@ timelineElement.addEventListener("pointercancel", (event) => {
 		timelineElement.releasePointerCapture(event.pointerId);
 	}
 });
+
+timelineElement.addEventListener("wheel", handleTimelineWheel, { passive: false });
 
 timelineElement.addEventListener("keydown", (event) => {
 	if (!canUseTimeline()) {
@@ -493,10 +525,43 @@ skipCutsPreviewInput.addEventListener("change", () => {
 
 	if (skipCutsPreviewInput.checked) {
 		startPreviewSkipLoop();
-		showToast("Skip cuts enabled", "Playback will jump over red cut ranges.");
+		showToast("Skip cuts enabled", "Playback will jump over ranges marked for removal.");
 	} else {
 		stopPreviewSkipLoop();
 		showToast("Skip cuts disabled", "Playback will include the full source video.");
+	}
+});
+
+cutActionSelectElement.addEventListener("change", () => {
+	updateSelectedCutOptions({ mode: cutActionSelectElement.value }, { showMessage: true });
+});
+
+cutColorInputElement.addEventListener("input", () => {
+	updateSelectedCutOptions({ mode: CUT_MODE_REPLACE, color: cutColorInputElement.value }, { showMessage: false });
+});
+
+cutColorPickVideoButton.addEventListener("click", () => {
+	startVideoColorPick();
+});
+
+mergePreviousCutButton.addEventListener("click", () => {
+	mergeSelectedCut("previous");
+});
+
+mergeNextCutButton.addEventListener("click", () => {
+	mergeSelectedCut("next");
+});
+
+deleteCutButton.addEventListener("click", () => {
+	deleteSelectedCut();
+});
+
+videoElement.addEventListener("pointerdown", handleVideoColorPickPointerDown, true);
+
+document.addEventListener("keydown", (event) => {
+	if (event.key === "Escape" && videoColorPickActive) {
+		stopVideoColorPick();
+		showToast("Video color pick canceled", "No replacement color was changed.", "warning");
 	}
 });
 
@@ -541,6 +606,7 @@ function setTimelineView(start, end, options = {}) {
 		timelineViewEnd = 0;
 		updateTimelineViewLabels();
 		updateTimelineZoomControls();
+		updateTimelinePanState();
 		return;
 	}
 
@@ -559,6 +625,7 @@ function setTimelineView(start, end, options = {}) {
 	timelineViewEnd = nextEnd;
 	updateTimelineViewLabels();
 	updateTimelineZoomControls();
+	updateTimelinePanState();
 	renderCutOverlays(cutList);
 	updateTimelinePlayhead();
 
@@ -590,6 +657,56 @@ function centerTimelineOn(time) {
 	const center = Number.isFinite(time) ? time : 0;
 
 	setTimelineView(center - windowSize / 2, center + windowSize / 2);
+}
+
+function handleTimelineWheel(event) {
+	if (!canPanTimeline()) {
+		return;
+	}
+
+	event.preventDefault();
+	const wheelDelta = getTimelineWheelDelta(event);
+
+	if (!wheelDelta) {
+		return;
+	}
+
+	const secondsPerPixel = getTimelineViewDuration() / Math.max(1, timelineElement.clientWidth);
+	const nextStart = timelineViewStart + wheelDelta * secondsPerPixel;
+	const viewDuration = getTimelineViewDuration();
+
+	setTimelineView(nextStart, nextStart + viewDuration, { renderThumbnails: false });
+	scheduleTimelineThumbnailRefresh();
+}
+
+function getTimelineWheelDelta(event) {
+	const primaryDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+	let delta = primaryDelta;
+
+	if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+		delta *= TIMELINE_WHEEL_LINE_PIXELS;
+	} else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+		delta *= TIMELINE_WHEEL_PAGE_PIXELS;
+	}
+
+	return delta;
+}
+
+function scheduleTimelineThumbnailRefresh() {
+	timelineThumbnailRun += 1;
+	window.clearTimeout(timelineThumbnailRefreshTimer);
+	timelineThumbnailRefreshTimer = window.setTimeout(() => {
+		timelineThumbnailRefreshTimer = null;
+		renderTimelineThumbnails(videoElement.currentSrc || videoSrc, timelineDuration);
+	}, TIMELINE_THUMBNAIL_REFRESH_DELAY);
+}
+
+function updateTimelinePanState() {
+	timelineElement.classList.toggle("timeline--pannable", canPanTimeline());
+}
+
+function canPanTimeline() {
+	return canUseTimeline() && getTimelineViewDuration() < timelineDuration - 0.001;
 }
 
 function ensureTimeVisible(time) {
@@ -696,7 +813,7 @@ async function renderTimelineThumbnails(src, duration) {
 			timelineStatusElement.textContent = `Building thumbnails ${index + 1}/${thumbnailCount}...`;
 		}
 
-		timelineStatusElement.textContent = "Drag the filmstrip to scrub. Red spans are cuts.";
+		timelineStatusElement.textContent = "Drag to scrub. Scroll while zoomed to pan. Red spans are cuts.";
 	} catch (error) {
 		console.error("Error building timeline thumbnails:", error);
 		timelineStatusElement.textContent = "Thumbnails unavailable. Drag the strip to scrub.";
@@ -855,16 +972,39 @@ function renderCutOverlays(cuts = []) {
 			return;
 		}
 
-		const marker = document.createElement("div");
+		const marker = document.createElement("button");
 		const visibleStart = clamp(cut.start, timelineViewStart, timelineViewEnd);
 		const visibleEnd = clamp(cut.end, timelineViewStart, timelineViewEnd);
 		const startPercent = timeToTimelinePercent(visibleStart);
 		const endPercent = timeToTimelinePercent(visibleEnd);
+		const mode = getCutMode(cut);
+		const isSelected = selectedCutIndex === cut.index;
 
-		marker.className = "timeline__cut-marker";
+		marker.type = "button";
+		marker.className = `timeline__cut-marker timeline__cut-marker--${mode}`;
+		marker.classList.toggle("is-selected", isSelected);
 		marker.style.left = `${startPercent}%`;
 		marker.style.width = `${Math.max(0.4, endPercent - startPercent)}%`;
-		marker.title = `Cut ${formatTime(cut.start)} to ${formatTime(cut.end)}`;
+		marker.dataset.cutIndex = String(cut.index);
+
+		if (mode === CUT_MODE_REPLACE) {
+			marker.style.setProperty("--cut-color", getCutColor(cut));
+		}
+
+		marker.title = getCutMarkerTitle(cut);
+		marker.setAttribute("aria-label", marker.title);
+		marker.addEventListener("click", (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			selectCut(cut.index, { seek: true, clearPoint: true });
+			event.currentTarget.focus({ preventScroll: true });
+		});
+		marker.addEventListener("pointerdown", (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			selectCut(cut.index, { seek: true, clearPoint: true });
+			event.currentTarget.focus({ preventScroll: true });
+		});
 		timelineCutsElement.appendChild(marker);
 
 		if (isTimeVisible(cut.start)) {
@@ -887,14 +1027,28 @@ function normalizeCutRanges(cuts, duration) {
 			index,
 			start: Number(cut.start),
 			end: Number(cut.end),
+			mode: getCutMode(cut),
+			color: getCutColor(cut),
 		}))
 		.filter((cut) => Number.isFinite(cut.start) && Number.isFinite(cut.end) && cut.end > cut.start)
 		.map((cut) => ({
 			index: cut.index,
 			start: clamp(cut.start, 0, duration),
 			end: clamp(cut.end, 0, duration),
+			mode: cut.mode,
+			color: cut.color,
 		}))
 		.filter((cut) => cut.end > cut.start);
+}
+
+function getCutMarkerTitle(cut) {
+	const timeRange = `${formatTime(cut.start)} to ${formatTime(cut.end)}`;
+
+	if (getCutMode(cut) === CUT_MODE_REPLACE) {
+		return `Cut ${cut.index + 1}: replace video with ${getCutColor(cut)} from ${timeRange}; audio preserved`;
+	}
+
+	return `Cut ${cut.index + 1}: remove ${timeRange}`;
 }
 
 function createCutPointHandle(cut, edge, percent) {
@@ -961,14 +1115,38 @@ function handleCutPointKeydown(event, cutIndex, edge) {
 	}
 }
 
+function selectCut(cutIndex, options = {}) {
+	const cut = cutList[cutIndex];
+
+	if (!cut) {
+		clearSelectedCut();
+		return;
+	}
+
+	selectedCutIndex = cutIndex;
+
+	if (options.seek !== false) {
+		videoElement.currentTime = Number(cut.start) || 0;
+	}
+
+	if (options.clearPoint) {
+		selectedCutPoint = null;
+	}
+
+	updateSelectedCutHandleClasses();
+	updateCutOptionsEditor();
+	updateCutPointEditor();
+}
+
 function selectCutPoint(cutIndex, edge, options = {}) {
 	const cut = cutList[cutIndex];
 
 	if (!cut || !["start", "end"].includes(edge)) {
-		clearSelectedCutPoint();
+		clearSelectedCut();
 		return;
 	}
 
+	selectedCutIndex = cutIndex;
 	selectedCutPoint = { cutIndex, edge };
 
 	if (options.seek !== false) {
@@ -976,6 +1154,7 @@ function selectCutPoint(cutIndex, edge, options = {}) {
 	}
 
 	updateSelectedCutHandleClasses();
+	updateCutOptionsEditor();
 	updateCutPointEditor();
 }
 
@@ -986,6 +1165,31 @@ function clearSelectedCutPoint() {
 	hideCutPointEditor();
 }
 
+function clearSelectedCut() {
+	selectedCutIndex = null;
+	selectedCutPoint = null;
+	activeCutPointDrag = null;
+	stopVideoColorPick();
+	updateSelectedCutHandleClasses();
+	hideCutPointEditor();
+	hideCutOptionsEditor();
+}
+
+function syncSelectionWithCutList() {
+	if (selectedCutIndex !== null && !cutList[selectedCutIndex]) {
+		selectedCutIndex = null;
+		selectedCutPoint = null;
+		activeCutPointDrag = null;
+		stopVideoColorPick();
+		return;
+	}
+
+	if (selectedCutPoint && !cutList[selectedCutPoint.cutIndex]) {
+		selectedCutPoint = null;
+		activeCutPointDrag = null;
+	}
+}
+
 function updateSelectedCutHandleClasses() {
 	timelineCutsElement.querySelectorAll(".timeline__cut-handle").forEach((handle) => {
 		const isSelected =
@@ -994,6 +1198,10 @@ function updateSelectedCutHandleClasses() {
 			handle.dataset.edge === selectedCutPoint.edge;
 
 		handle.classList.toggle("is-selected", Boolean(isSelected));
+	});
+
+	timelineCutsElement.querySelectorAll(".timeline__cut-marker").forEach((marker) => {
+		marker.classList.toggle("is-selected", Number(marker.dataset.cutIndex) === selectedCutIndex);
 	});
 }
 
@@ -1027,6 +1235,318 @@ function updateCutPointEditor() {
 
 function hideCutPointEditor() {
 	cutPointEditorElement.hidden = true;
+}
+
+function updateCutOptionsEditor() {
+	if (selectedCutIndex === null) {
+		hideCutOptionsEditor();
+		return;
+	}
+
+	const cut = cutList[selectedCutIndex];
+
+	if (!cut) {
+		clearSelectedCut();
+		return;
+	}
+
+	const mode = getCutMode(cut);
+	const color = getCutColor(cut);
+	const isReplaceMode = mode === CUT_MODE_REPLACE;
+
+	cutOptionsEditorElement.hidden = false;
+	cutOptionsEditorElement.classList.toggle("is-remove", !isReplaceMode);
+	cutOptionsLabelElement.textContent = `Cut ${selectedCutIndex + 1} options`;
+	cutOptionsSummaryElement.textContent = isReplaceMode
+		? `Replace video with ${color}; keep audio`
+		: "Remove from final edit";
+	cutActionSelectElement.value = mode;
+	cutColorInputElement.value = color;
+	cutColorInputElement.disabled = !isReplaceMode;
+	cutColorPickVideoButton.disabled = !videoSrc;
+	cutColorSwatchElement.style.backgroundColor = color;
+	mergePreviousCutButton.disabled = selectedCutIndex <= 0;
+	mergeNextCutButton.disabled = selectedCutIndex >= cutList.length - 1;
+	deleteCutButton.disabled = false;
+}
+
+function hideCutOptionsEditor() {
+	cutOptionsEditorElement.hidden = true;
+}
+
+function updateSelectedCutOptions(changes, options = {}) {
+	if (!readEditableCutListForSelectedCut()) {
+		return;
+	}
+
+	const cut = cutList[selectedCutIndex];
+
+	if (!cut) {
+		clearSelectedCut();
+		return;
+	}
+
+	const mode = changes.mode ? normalizeCutMode(changes.mode) : getCutMode(cut);
+
+	cut.mode = mode;
+
+	if (mode === CUT_MODE_REPLACE) {
+		const color = normalizeHexColor(changes.color || cut.color || DEFAULT_REPLACEMENT_COLOR);
+
+		if (!color) {
+			showToast("Invalid color", "Use a hex color like #00aaff.", "error");
+			updateCutOptionsEditor();
+			return;
+		}
+
+		cut.color = color;
+	} else {
+		delete cut.color;
+	}
+
+	updateCutlistDisplay();
+
+	if (options.showMessage) {
+		if (mode === CUT_MODE_REPLACE) {
+			showToast("Cut will keep audio", `Video will be replaced with ${cut.color}.`);
+		} else {
+			showToast("Cut will be removed", "This range will be left out of the final edit.");
+		}
+	}
+}
+
+function deleteSelectedCut() {
+	if (!readEditableCutListForSelectedCut()) {
+		return;
+	}
+
+	const deletedIndex = selectedCutIndex;
+	const deletedCut = cutList[deletedIndex];
+
+	cutList.splice(deletedIndex, 1);
+
+	const nextSelectedIndex = cutList.length ? Math.min(deletedIndex, cutList.length - 1) : null;
+	finishCutListMutation(nextSelectedIndex, {
+		seek: nextSelectedIndex !== null,
+	});
+	showToast("Cut deleted", `Removed cut ${deletedIndex + 1}: ${formatTime(Number(deletedCut.start))} to ${formatTime(Number(deletedCut.end))}.`);
+}
+
+function mergeSelectedCut(direction) {
+	if (!readEditableCutListForSelectedCut()) {
+		return;
+	}
+
+	const currentIndex = selectedCutIndex;
+	const currentCut = cutList[currentIndex];
+
+	if (direction === "previous") {
+		if (currentIndex <= 0) {
+			showToast("No previous cut", "This is already the first cut.", "warning");
+			return;
+		}
+
+		const previousCut = cutList[currentIndex - 1];
+		currentCut.start = previousCut.start;
+		cutList.splice(currentIndex - 1, 1);
+		finishCutListMutation(currentIndex - 1);
+		showToast("Cuts merged", `Selected cut now starts at ${formatTime(Number(previousCut.start))}.`);
+		return;
+	}
+
+	if (currentIndex >= cutList.length - 1) {
+		showToast("No next cut", "This is already the last cut.", "warning");
+		return;
+	}
+
+	const nextCut = cutList[currentIndex + 1];
+	currentCut.end = nextCut.end;
+	cutList.splice(currentIndex + 1, 1);
+	finishCutListMutation(currentIndex);
+	showToast("Cuts merged", `Selected cut now ends at ${formatTime(Number(nextCut.end))}.`);
+}
+
+function readEditableCutListForSelectedCut() {
+	if (selectedCutIndex === null) {
+		showToast("Choose a cut first", "Click a cut range or one of its handles.", "warning");
+		return false;
+	}
+
+	try {
+		cutList = readCutlistFromEditor();
+		syncSelectionWithCutList();
+	} catch (error) {
+		timelineElement.classList.add("timeline--invalid");
+		showToast("Check the cutlist JSON", error.message, "error");
+		return false;
+	}
+
+	if (selectedCutIndex === null || !cutList[selectedCutIndex]) {
+		clearSelectedCut();
+		return false;
+	}
+
+	return true;
+}
+
+function finishCutListMutation(nextSelectedIndex, options = {}) {
+	selectedCutIndex = nextSelectedIndex;
+	selectedCutPoint = null;
+	activeCutPointDrag = null;
+	stopVideoColorPick();
+
+	if (nextSelectedIndex !== null) {
+		const selectedCut = cutList[nextSelectedIndex];
+		const nextTime = Number(selectedCut.start) || 0;
+
+		ensureTimeVisible(nextTime);
+
+		if (options.seek !== false) {
+			videoElement.currentTime = nextTime;
+		}
+	}
+
+	updateCutlistDisplay();
+}
+
+function startVideoColorPick() {
+	if (selectedCutIndex === null) {
+		showToast("Choose a cut first", "Click a cut range or one of its handles.", "warning");
+		return;
+	}
+
+	if (!videoElement.videoWidth || !videoElement.videoHeight || videoElement.readyState < 2) {
+		showToast("Video frame unavailable", "Wait for the video frame to load, then try again.", "warning");
+		return;
+	}
+
+	videoColorPickActive = true;
+	document.body.classList.add("video-color-picking");
+	showToast("Pick from Video", "Click the current video frame to sample a replacement color.");
+}
+
+function stopVideoColorPick() {
+	videoColorPickActive = false;
+	document.body.classList.remove("video-color-picking");
+}
+
+function handleVideoColorPickPointerDown(event) {
+	if (!videoColorPickActive) {
+		return;
+	}
+
+	event.preventDefault();
+	event.stopPropagation();
+
+	try {
+		const color = sampleVideoColorAtPointer(event);
+
+		if (!color) {
+			showToast("Click inside the frame", "Choose a point inside the displayed video image.", "warning");
+			return;
+		}
+
+		updateSelectedCutOptions({ mode: CUT_MODE_REPLACE, color }, { showMessage: true });
+		stopVideoColorPick();
+	} catch (error) {
+		console.error("Error sampling video color:", error);
+		stopVideoColorPick();
+		showToast("Could not pick color", error.message, "error");
+	}
+}
+
+function sampleVideoColorAtPointer(event) {
+	const videoWidth = videoElement.videoWidth;
+	const videoHeight = videoElement.videoHeight;
+	const point = getVideoFramePoint(event, videoWidth, videoHeight);
+
+	if (!point) {
+		return null;
+	}
+
+	const canvas = document.createElement("canvas");
+	canvas.width = videoWidth;
+	canvas.height = videoHeight;
+
+	const context = canvas.getContext("2d");
+	context.drawImage(videoElement, 0, 0, videoWidth, videoHeight);
+
+	const [red, green, blue] = context.getImageData(point.x, point.y, 1, 1).data;
+	return rgbToHex(red, green, blue);
+}
+
+function getVideoFramePoint(event, videoWidth, videoHeight) {
+	const rect = videoElement.getBoundingClientRect();
+
+	if (!rect.width || !rect.height || !videoWidth || !videoHeight) {
+		return null;
+	}
+
+	const elementRatio = rect.width / rect.height;
+	const videoRatio = videoWidth / videoHeight;
+	let renderedWidth = rect.width;
+	let renderedHeight = rect.height;
+	let offsetX = 0;
+	let offsetY = 0;
+
+	if (elementRatio > videoRatio) {
+		renderedHeight = rect.height;
+		renderedWidth = renderedHeight * videoRatio;
+		offsetX = (rect.width - renderedWidth) / 2;
+	} else {
+		renderedWidth = rect.width;
+		renderedHeight = renderedWidth / videoRatio;
+		offsetY = (rect.height - renderedHeight) / 2;
+	}
+
+	const relativeX = event.clientX - rect.left - offsetX;
+	const relativeY = event.clientY - rect.top - offsetY;
+
+	if (relativeX < 0 || relativeY < 0 || relativeX > renderedWidth || relativeY > renderedHeight) {
+		return null;
+	}
+
+	return {
+		x: clamp(Math.floor((relativeX / renderedWidth) * videoWidth), 0, videoWidth - 1),
+		y: clamp(Math.floor((relativeY / renderedHeight) * videoHeight), 0, videoHeight - 1),
+	};
+}
+
+function rgbToHex(red, green, blue) {
+	return `#${[red, green, blue]
+		.map((value) => Number(value).toString(16).padStart(2, "0"))
+		.join("")}`;
+}
+
+function getCutMode(cut) {
+	return cut && cut.mode === CUT_MODE_REPLACE ? CUT_MODE_REPLACE : CUT_MODE_REMOVE;
+}
+
+function normalizeCutMode(mode) {
+	return mode === CUT_MODE_REPLACE ? CUT_MODE_REPLACE : CUT_MODE_REMOVE;
+}
+
+function getCutColor(cut) {
+	return normalizeHexColor(cut && cut.color) || DEFAULT_REPLACEMENT_COLOR;
+}
+
+function normalizeHexColor(color) {
+	if (typeof color !== "string") {
+		return null;
+	}
+
+	const trimmed = color.trim();
+	const shortMatch = trimmed.match(/^#([0-9a-f]{3})$/i);
+
+	if (shortMatch) {
+		return `#${shortMatch[1].split("").map((character) => character + character).join("")}`.toLowerCase();
+	}
+
+	if (!/^#[0-9a-f]{6}$/i.test(trimmed)) {
+		return null;
+	}
+
+	return trimmed.toLowerCase();
 }
 
 function updateSelectedCutPointFromPointer(event, options = {}) {
@@ -1122,7 +1642,7 @@ function updatePreviewSkipState(cuts = cutList) {
 
 	document.body.classList.toggle("preview-skip-enabled", skipCutsPreviewInput.checked);
 	skipCutsStatusElement.textContent = skipCutsPreviewInput.checked
-		? `Skipping ${cutCount} ${cutCount === 1 ? "cut" : "cuts"}`
+		? `Skipping ${cutCount} removed ${cutCount === 1 ? "cut" : "cuts"}`
 		: "Preview off";
 
 	if (!skipCutsPreviewInput.checked || cutCount === 0) {
@@ -1195,6 +1715,7 @@ function findActivePreviewCut(time) {
 
 function getPreviewCutRanges(cuts = cutList) {
 	const ranges = normalizeCutRanges(cuts, timelineDuration || videoElement.duration || 0)
+		.filter((cut) => cut.mode === CUT_MODE_REMOVE)
 		.map((cut) => ({
 			start: cut.start,
 			end: cut.end,
@@ -1442,13 +1963,13 @@ editVideoButton.addEventListener("click", async () => {
 	editVideoButton.disabled = true;
 	resetEditProgress();
 	statusElement.textContent = debugBlackCutsInput.checked
-		? "Creating debug edit with black screens where cuts occur. This may take a while..."
+		? "Creating debug edit with black screens where removed cuts occur. This may take a while..."
 		: "Editing video. This may take a while...";
 
 	try {
 		const saved = await saveCutlist();
 		statusElement.textContent = debugBlackCutsInput.checked
-			? `Cutlist saved to ${saved.path}\n\nCreating debug edit with black screens where cuts occur. This may take a while...`
+			? `Cutlist saved to ${saved.path}\n\nCreating debug edit with black screens where removed cuts occur. This may take a while...`
 			: `Cutlist saved to ${saved.path}\n\nEditing video. This may take a while...`;
 
 		updateEditProgress({ percent: 5, message: "Starting edit job..." });

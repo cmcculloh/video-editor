@@ -123,6 +123,33 @@
                         </div>
                         <p class="hint">Drag a handle, use arrow keys to nudge, or enter an exact second.</p>
                     </section>
+                    <section id="cut-options-editor" class="cut-options-editor" aria-live="polite" hidden>
+                        <div class="cut-options-editor__summary">
+                            <span id="cut-options-label">No cut selected</span>
+                            <strong id="cut-options-summary">Remove from final edit</strong>
+                        </div>
+                        <label class="field field--compact" for="cut-action-select">
+                            <span>Final edit</span>
+                            <select id="cut-action-select">
+                                <option value="remove">Remove entirely</option>
+                                <option value="replace">Replace video with color</option>
+                            </select>
+                        </label>
+                        <label class="field field--color" for="cut-color-input">
+                            <span>Replacement color</span>
+                            <input id="cut-color-input" type="color" value="#000000">
+                        </label>
+                        <div class="cut-options-editor__actions">
+                            <button id="cut-color-pick-video" class="button button--secondary" type="button">Pick from Video</button>
+                            <span id="cut-color-swatch" class="cut-color-swatch" aria-hidden="true"></span>
+                        </div>
+                        <div class="cut-options-editor__cut-actions">
+                            <button id="merge-previous-cut" class="button button--ghost" type="button">Merge Previous</button>
+                            <button id="merge-next-cut" class="button button--ghost" type="button">Merge Next</button>
+                            <button id="delete-cut" class="button button--danger" type="button">Delete Cut</button>
+                        </div>
+                        <p class="hint">Color replacement keeps this range in the final edit and preserves its audio.</p>
+                    </section>
                 </section>
 
                 <div id="viewer-readout" class="viewer-readout" aria-label="Viewer readout">
@@ -173,7 +200,7 @@
                         <button id="edit-video" class="button button--primary" disabled>Edit Video</button>
                         <label class="toggle toggle--warning">
                             <input type="checkbox" id="debug-black-cuts">
-                            <span>Debug black cuts</span>
+                            <span>Debug black removals</span>
                         </label>
                     </div>
                 </div>
@@ -186,7 +213,7 @@
                         <span id="cut-count" class="meta-pill">0 cuts</span>
                     </div>
                     <textarea id="cutlist" rows="14" cols="80" spellcheck="false"></textarea>
-                    <p class="hint">Each saved range is removed from the final edit.</p>
+                    <p class="hint">Each saved range can be removed, or replaced with a color while its audio stays.</p>
                 </section>
 
                 <section id="edit-progress" class="edit-progress panel" hidden>
