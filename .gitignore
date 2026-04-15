@@ -8,6 +8,7 @@ temp_segments
 cookies.txt
 auth.json
 *_cookies.txt
+chatgpttranscript-playlist_download.pdf
 /test-results/
 /playwright-report/
 /playwright/.cache/
