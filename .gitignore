@@ -1,10 +1,20 @@
 node_modules
+downloads/
+public/SAO/
+public/edits/
+public/intros-and-outros/
+CC Libraries Downloads/
+Motion Graphics Template Media/
+Adobe premiere projects/
 *.mp4
 *.mkv
 *.m4v
+*.prproj
+*.sfv
 .DS_Store
 package-lock.json
 temp_segments
+output/
 cookies.txt
 auth.json
 *_cookies.txt
