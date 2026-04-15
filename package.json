@@ -7,7 +7,6 @@
   "scripts": {
     "start": "node src/server.cjs",
     "editvideo": "node scripts/video/edit-video.cjs",
-    "download:playlist": "node scripts/download/playlist-download.mjs",
     "video:cut": "node scripts/video/cut-video.cjs"
   },
   "author": "",
