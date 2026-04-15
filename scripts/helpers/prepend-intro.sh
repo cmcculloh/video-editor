@@ -2,7 +2,7 @@
 
 # Check if the right number of arguments are provided
 if [ "$#" -ne 1 ]; then
-    echo "Usage: ./prepend_intro.sh <episode>"
+    echo "Usage: ./scripts/helpers/prepend-intro.sh <episode>"
     exit 1
 fi
 
@@ -10,8 +10,6 @@ PROMO_STRING="kid-buu-premiered"
 PROMO_VIDEO="./public/${PROMO_STRING}.mp4"
 
 INTRO_STRING="teen-gohan-intro"
-# INTRO_STRING="rtd_blueray_final" # This intro was made by downloading the intro from youtube, importing an episode into premiere, putting it on the timeline, bringing the intro in, deleting the episode, and exporting the intro.
-# INTRO_VIDEO="./public/rtddbzintro.mp4" # This intro was made by importing an episode into premiere, putting it on the timeline, bringing the intro in, deleting the episode, and exporting the intro.
 INTRO_VIDEO="./public/${INTRO_STRING}.mp4" # This was downloaded from youtube
 EPISODE_STRING="$1"
 EPISODE_VIDEO="${EPISODE_STRING}-TV-Edit.mp4"

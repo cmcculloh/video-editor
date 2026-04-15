@@ -1,8 +1,8 @@
-// node playlist_download.mjs "https://youtube.com/playlist?list=PLFm1tTY1NA4coPMrYuttluRQ1yzVO8gqp" "MumboJumbo/Season-8" --no-episode
-// node playlist_download.mjs "https://www.youtube.com/@postmodernjukebox/videos" "PostmodernJukebox"
-// node playlist_download.mjs "https://www.youtube.com/playlist?list=PLeNLZ73biGeuPLmw2BtvPysAZ9PEHOo3e" become-elite
+// node scripts/download/playlist-download.mjs "https://youtube.com/playlist?list=PLFm1tTY1NA4coPMrYuttluRQ1yzVO8gqp" "MumboJumbo/Season-8" --no-episode
+// node scripts/download/playlist-download.mjs "https://www.youtube.com/@postmodernjukebox/videos" "PostmodernJukebox"
+// node scripts/download/playlist-download.mjs "https://www.youtube.com/playlist?list=PLeNLZ73biGeuPLmw2BtvPysAZ9PEHOo3e" become-elite
 
-// node playlist_download.mjs "https://www.youtube.com/playlist?list=PLR1m8wT98sb56ynTxCxD_OeJBMl-C0Iww" water-color
+// node scripts/download/playlist-download.mjs "https://www.youtube.com/playlist?list=PLR1m8wT98sb56ynTxCxD_OeJBMl-C0Iww" water-color
 
 import { exec, execFile } from "child_process";
 import util from "util";

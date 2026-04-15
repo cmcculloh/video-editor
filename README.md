@@ -7,14 +7,24 @@ The code in this repository was built _almost entirely_ by ChatGPT 4. This was a
 The documentation below _this line_ was (almost) entirely ChatGPT4 generated.
 
 ## Table of Contents
-- [YT Playlist Download](#playlist-download-playlist_downloadmjs)
+- [Repo Layout](#repo-layout)
+- [YT Playlist Download](#playlist-download)
 - [TV Edit Creator](#tv-edit-generator)
 
-## Playlist Download (playlist_download.mjs)
+## Repo Layout
+
+- `src/` contains the web server and shared cutlist configuration.
+- `scripts/video/` contains command-line video processing tools.
+- `scripts/download/` contains playlist/channel download tools.
+- `scripts/helpers/` contains one-off shell helpers.
+- `data/` contains sample cut-list data used by older scripts.
+- `cutlists/` contains saved TV edit cutlists.
+- `public/` contains the web UI and static image assets.
+- `archive/` contains older experimental scripts kept for reference.
+
+## Playlist Download
 
 This is a script to download video playlists from YouTube using Node.js. It downloads the videos and stores them in the specified folder with season and episode numbers (optional). Previous downloads are cached, so if more videos are added to the playlist and you run it again, it will only download the new videos.
-
-[transcript of chat that generated this code](./chatgpttranscript-playlist_download.pdf)
 
 ### Requirements
 
@@ -31,16 +41,14 @@ npm install axios node-fetch yt-dlp
 
 ### Usage
 
-1. Place the `playlist_download.mjs` file in your project folder.
+1. Update `defaultRoot` in `scripts/download/playlist-download.mjs` to fit your environment.
 
-2. Change `const defaultRoot = "/volume1/McCullohShare/Plex/TV";` to fit your environment needs.
+2. Create a `www.youtube.com_cookies.txt` file in the repo root. This file should contain your YouTube login cookies to allow the script to access restricted content.
 
-3. Create a file named `cookies.txt` in the same folder as `playlist_download.mjs`. This file should contain your YouTube login cookies to allow the script to access restricted content.
-
-4. Run the script using the following command:
+3. Run the script using the following command:
 
 ```bash
-node playlist_download.mjs [playlist_URL] [folder_name] [--no-season] [--no-episode]
+npm run download:playlist -- [playlist_URL] [folder_name] [--no-season] [--no-episode]
 ```
 
 Replace `[playlist_URL]` with the URL of the YouTube playlist or channel you want to download. Replace `[folder_name]` with the name of the folder where you want to store the downloaded videos. If you want to skip adding season and/or episode numbers to the video file names, add the `--no-season` and/or `--no-episode` flags.
@@ -50,19 +58,19 @@ Replace `[playlist_URL]` with the URL of the YouTube playlist or channel you wan
 - To download a playlist and store the videos in a folder called "MyPlaylist" without adding season and episode numbers:
 
 ```bash
-node playlist_download.mjs "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxx" "MyPlaylist" --no-episode
+npm run download:playlist -- "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxx" "MyPlaylist" --no-episode
 ```
 
 - To download a playlist and store the videos in a folder called "MyPlaylist" without adding season numbers:
 
 ```bash
-node playlist_download.mjs "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxx" "MyPlaylist" --no-season
+npm run download:playlist -- "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxx" "MyPlaylist" --no-season
 ```
 
 - To download a channel's videos and store them in a folder called "MyChannel" with season and episode numbers:
 
 ```bash
-node playlist_download.mjs "https://www.youtube.com/channel/UCxxxxxxxxxxxxxxx/videos" "MyChannel"
+npm run download:playlist -- "https://www.youtube.com/channel/UCxxxxxxxxxxxxxxx/videos" "MyChannel"
 ```
 
 ### Notes
@@ -102,7 +110,7 @@ npm install
 
 ### Step 1: Create a cutlist
 
-1. Run the server by executing `npm start` or `node video_editor_server.cjs` in the terminal.
+1. Run the server by executing `npm start` or `node src/server.cjs` in the terminal.
 2. Open a web browser and visit `http://localhost:3000/` to view the video editor interface.
 3. Choose a local video, then use the "Cut Start" and "Cut End" buttons to create ranges.
 4. Select a cut to choose its reason category, VidAngel-style filter, and optional note.
@@ -111,22 +119,17 @@ npm install
 
 Saved cutlists can include per-cut `reason` objects, plus an `episodeIdentity` object with a canonical ID like `tvmaze:episode:163555`, the TVmaze show and episode IDs, season and episode numbers, and external show IDs such as IMDb or TheTVDB when TVmaze provides them. This gives shared cutlists a stable episode key instead of relying only on the local filename.
 
-### Step 2: Create a tv-edit-list.cjs file
+### Step 2: Save or edit a cutlist
 
-1. Create a new file named "tv-edit-list.cjs" and paste the cutlist from your clipboard into this file, following the example provided.
-2. Export the cutlist as a module using `module.exports = cutList;`.
+1. Use the web UI to save cutlists under `cutlists/`.
+2. Edit the JSON files directly when you need to refine saved cut metadata.
 
-### Step 3: Update edit_video.cjs
+### Step 3: Run the edit script
 
-1. Make sure that "edit_video.cjs" and "tv-edit-list.cjs" are in the same directory.
-2. Update the paths in "edit_video.cjs" to match the location of the input video (in this case, `./public/spiderman.mp4`), the output video (e.g., `spiderman-TV-Edit.mp4`), and the cutlist (e.g., `./tv-edit-list.cjs`).
-
-### Step 4: Run the edit_video.cjs script
-
-1. Run the "edit_video.cjs" script by executing `node edit_video.cjs` in the terminal.
+1. Run the edit script with `npm run editvideo -- <selected-video-filename>`.
 2. The script processes the input video according to the cutlist, creating a new output video with the specified cuts.
 
-The "edit_video.cjs" script reads the cutlist from "tv-edit-list.cjs", processes the input video by cutting the specified segments, and concatenates the remaining segments to create a new output video. The script uses the `fluent-ffmpeg` library to perform video editing operations, and the `async` library to handle asynchronous processing.
+The edit script reads saved cutlists from `cutlists/`, processes the input video by cutting the specified segments, and concatenates the remaining segments to create a new output video. The script uses the `fluent-ffmpeg` library to perform video editing operations, and the `async` library to handle asynchronous processing.
 
 ### BONUS STEP: Custom Intro
 

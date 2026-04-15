@@ -2,12 +2,12 @@ const fs = require("fs");
 const path = require("path");
 const ffmpeg = require("fluent-ffmpeg");
 const async = require("async");
-const cutList = require("./cut-list.cjs");
+const cutList = require("../../data/cut-list.cjs");
 
 const rootDir = "/Volumes/Seagate/";
 
 // use like (command = process | concatenate | convert)
-// node cut_video.cjs <command> <outputvideo>
+// node scripts/video/cut-video.cjs <command> <outputvideo>
 
 // flip a video 180 degrees
 // ffmpeg -i ${rootDir}output/may-6-tristan/sources/IMG_5276.MOV.mp4 -vf "vflip,hflip" -c:a copy ${rootDir}output/may-6-tristan/sources/IMG_5276.mp4
@@ -348,7 +348,7 @@ if (command === "convert") {
 	});
 } else {
 	console.error(
-		"Invalid command. Please use 'concatenate' or 'process'. node cut_video.cjs <command> <outputvideo>"
+		"Invalid command. Please use 'concatenate' or 'process'. node scripts/video/cut-video.cjs <command> <outputvideo>"
 	);
 	process.exit(1);
 }

@@ -11,12 +11,13 @@ const {
 	getCutListConfigForVideo,
 	getIntroOutroPath,
 	normalizeVideoPath,
-} = require("./tv-edit-list.cjs");
+} = require("../../src/cutlist-config.cjs");
+const rootDir = path.join(__dirname, "..", "..");
 
 const file = process.argv[2];
 
 if (!file) {
-	console.error("Usage: node edit_video.cjs <selected-video-filename>");
+	console.error("Usage: node scripts/video/edit-video.cjs <selected-video-filename>");
 	process.exit(1);
 }
 
@@ -25,11 +26,11 @@ const options = parseOptions(process.argv.slice(3));
 const cutListConfig = getCutListConfigForVideo(videoFile);
 const cutList = cutListConfig.cutList;
 const parsedFile = path.parse(videoFile);
-const originalVideo = path.join("./public", videoFile);
-const outputDir = path.join("./public/edits", parsedFile.dir);
+const originalVideo = path.join(rootDir, "public", videoFile);
+const outputDir = path.join(rootDir, "public", "edits", parsedFile.dir);
 const outputSuffix = options.debugBlackCuts ? "TV-Edit-Debug" : "TV-Edit";
 const finalVideo = path.join(outputDir, `${parsedFile.name}-${outputSuffix}.mp4`);
-const introSource = "./public/INTRO.mp4";
+const introSource = path.join(rootDir, "public", "INTRO.mp4");
 const introSrc = options.intro || cutListConfig.introSrc;
 const outroSrc = options.outro || cutListConfig.outroSrc;
 const introPath = introSrc ? getIntroOutroPath(introSrc) : null;
@@ -82,7 +83,7 @@ function timeStringToSeconds(timeString) {
 }
 
 function rescaleIntro(callback) {
-	const output = "./public/intro_rescaled.mp4";
+	const output = path.join(rootDir, "public", "intro_rescaled.mp4");
 	ffmpeg(introSource)
 		.size("720x456")
 		.output(output)
@@ -299,7 +300,7 @@ function processVideo(input, cutList, output, callback, options = {}) {
 		console.log("Segments:", segments);
 		emitProgress(15, `Created edit plan with ${segments.length} segment${segments.length === 1 ? "" : "s"}...`);
 
-		const tempDir = "./temp_segments/";
+		const tempDir = path.join(rootDir, "temp_segments");
 		if (!fs.existsSync(tempDir)) {
 			fs.mkdirSync(tempDir);
 		}
@@ -567,14 +568,14 @@ function getMetadataDuration(metadata) {
 // concatenateSegments([introSource], finalVideo, (err) => console.log(err));
 function concatenateSegments(segmentFilenames, output, callback, options = {}) {
 	// Prepend intro_rescaled.mp4 to the beginning of the segmentFilenames list
-	// segmentFilenames.unshift("./public/intro_rescaled.mp4");
+	// segmentFilenames.unshift(path.join(rootDir, "public", "intro_rescaled.mp4"));
 
 	const inputs = [
 		...(options.introPath ? [options.introPath] : []),
 		...segmentFilenames,
 		...(options.outroPath ? [options.outroPath] : []),
 	];
-	const listFile = path.join("temp_segments", "list.txt");
+	const listFile = path.join(rootDir, "temp_segments", "list.txt");
 	const listContent = inputs.map((input) => `file '${path.resolve(input)}'`).join("\n");
 
 	// Log the contents of list.txt

@@ -12,10 +12,12 @@ const {
 	normalizeCutList,
 	normalizeEpisodeIdentity,
 	normalizeVideoPath,
-} = require("./tv-edit-list.cjs");
+} = require("./cutlist-config.cjs");
 const app = express();
 const port = process.env.PORT || 3000;
-const publicDir = path.join(__dirname, "public");
+const rootDir = path.join(__dirname, "..");
+const publicDir = path.join(rootDir, "public");
+const editScriptPath = path.join("scripts", "video", "edit-video.cjs");
 const editJobs = new Map();
 const videoExtensions = new Set([
 	".avi",
@@ -75,7 +77,7 @@ app.get("/cutlists", async (req, res) => {
 				episodeIdentity: null,
 				introSrc: null,
 				outroSrc: null,
-				path: path.relative(__dirname, cutListPath),
+				path: path.relative(rootDir, cutListPath),
 			});
 			return;
 		}
@@ -86,7 +88,7 @@ app.get("/cutlists", async (req, res) => {
 		const introSrc = normalizeOptionalIntroOutro(cutListData.introSrc);
 		const outroSrc = normalizeOptionalIntroOutro(cutListData.outroSrc);
 
-		res.json({ exists: true, cutList, episodeIdentity, introSrc, outroSrc, path: path.relative(__dirname, cutListPath) });
+		res.json({ exists: true, cutList, episodeIdentity, introSrc, outroSrc, path: path.relative(rootDir, cutListPath) });
 	} catch (error) {
 		console.error("Error loading cutlist:", error);
 		res.status(400).json({ error: error.message || "Failed to load cutlist" });
@@ -103,7 +105,7 @@ app.post("/cutlists", async (req, res) => {
 		const cutListPath = await saveCutlistForVideo(videoSrc, { cutList, episodeIdentity, introSrc, outroSrc });
 		const editCommand = getEditCommand(videoSrc, { introSrc, outroSrc });
 
-		res.json({ ok: true, path: path.relative(__dirname, cutListPath), editCommand });
+		res.json({ ok: true, path: path.relative(rootDir, cutListPath), editCommand });
 	} catch (error) {
 		console.error("Error saving cutlist:", error);
 		res.status(400).json({ error: error.message || "Failed to save cutlist" });
@@ -160,7 +162,7 @@ app.post("/edits", async (req, res) => {
 			id: jobId,
 			status: "running",
 			command,
-			cutListPath: path.relative(__dirname, cutListPath),
+			cutListPath: path.relative(rootDir, cutListPath),
 			output,
 			outputUrl,
 			progress: { percent: 0, message: "Queued edit..." },
@@ -459,7 +461,7 @@ async function saveCutlistForVideo(videoSrc, options) {
 }
 
 function getEditCommand(videoSrc, options = {}) {
-	const args = ["node", "edit_video.cjs", shellQuote(videoSrc)];
+	const args = ["node", editScriptPath, shellQuote(videoSrc)];
 
 	if (options.introSrc) {
 		args.push("--intro", shellQuote(options.introSrc));
@@ -488,7 +490,7 @@ function shellQuote(value) {
 
 function runEdit(videoSrc, options = {}) {
 	return new Promise((resolve, reject) => {
-		const args = ["edit_video.cjs", videoSrc];
+		const args = [editScriptPath, videoSrc];
 
 		if (options.introSrc) {
 			args.push("--intro", options.introSrc);
@@ -503,7 +505,7 @@ function runEdit(videoSrc, options = {}) {
 		}
 
 		const child = spawn(process.execPath, args, {
-			cwd: __dirname,
+			cwd: rootDir,
 		});
 		let stdout = "";
 		let stderr = "";

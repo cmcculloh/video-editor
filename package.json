@@ -5,8 +5,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node video_editor_server.cjs",
-    "editvideo": "node edit_video.cjs"
+    "start": "node src/server.cjs",
+    "editvideo": "node scripts/video/edit-video.cjs",
+    "download:playlist": "node scripts/download/playlist-download.mjs",
+    "video:cut": "node scripts/video/cut-video.cjs"
   },
   "author": "",
   "license": "ISC",

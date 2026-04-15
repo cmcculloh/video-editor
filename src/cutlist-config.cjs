@@ -1,8 +1,9 @@
 const fs = require("fs");
 const path = require("path");
 
-const cutlistsDir = path.join(__dirname, "cutlists");
-const introsAndOutrosDir = path.join(__dirname, "public", "intros-and-outros");
+const rootDir = path.join(__dirname, "..");
+const cutlistsDir = path.join(rootDir, "cutlists");
+const introsAndOutrosDir = path.join(rootDir, "public", "intros-and-outros");
 const CUT_MODE_REMOVE = "remove";
 const CUT_MODE_REPLACE = "replace";
 const DEFAULT_REPLACEMENT_COLOR = "#000000";
