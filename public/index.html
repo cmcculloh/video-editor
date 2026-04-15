@@ -178,12 +178,30 @@
                             <button id="cut-color-pick-video" class="button button--secondary" type="button">Pick from Video</button>
                             <span id="cut-color-swatch" class="cut-color-swatch" aria-hidden="true"></span>
                         </div>
+                        <div class="cut-options-editor__reason">
+                            <label class="field" for="cut-reason-category-select">
+                                <span>Reason</span>
+                                <select id="cut-reason-category-select">
+                                    <option value="">Uncategorized</option>
+                                </select>
+                            </label>
+                            <label class="field" for="cut-reason-subcategory-select">
+                                <span>VidAngel filter</span>
+                                <select id="cut-reason-subcategory-select" disabled>
+                                    <option value="">Choose a reason first</option>
+                                </select>
+                            </label>
+                            <label class="field" for="cut-reason-note-input">
+                                <span>Note</span>
+                                <input id="cut-reason-note-input" type="text" maxlength="280" placeholder="Optional detail for this cut">
+                            </label>
+                        </div>
                         <div class="cut-options-editor__cut-actions">
                             <button id="merge-previous-cut" class="button button--ghost" type="button">Merge Previous</button>
                             <button id="merge-next-cut" class="button button--ghost" type="button">Merge Next</button>
                             <button id="delete-cut" class="button button--danger" type="button">Delete Cut</button>
                         </div>
-                        <p class="hint">Color replacement keeps this range in the final edit and preserves its audio.</p>
+                        <p class="hint">Color replacement keeps this range in the final edit and preserves its audio. Reasons use VidAngel-style filter categories.</p>
                     </section>
                 </section>
 

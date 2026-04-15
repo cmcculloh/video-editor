@@ -6,6 +6,81 @@ const introsAndOutrosDir = path.join(__dirname, "public", "intros-and-outros");
 const CUT_MODE_REMOVE = "remove";
 const CUT_MODE_REPLACE = "replace";
 const DEFAULT_REPLACEMENT_COLOR = "#000000";
+const CUT_REASON_CATEGORIES = [
+	{
+		id: "language",
+		label: "Language",
+		subcategories: [
+			{ id: "profanity", label: "Profanity" },
+			{ id: "blasphemy", label: "Blasphemy" },
+			{ id: "childish-crude-language", label: "Childish / Crude Language" },
+			{ id: "racial-slurs-bigoted-language", label: "Racial Slurs / Bigoted Language" },
+			{ id: "sexual-reference-innuendo", label: "Sexual Reference / Innuendo" },
+			{ id: "captions-with-profanity", label: "Captions with Profanity" },
+		],
+	},
+	{
+		id: "intimacy",
+		label: "Intimacy",
+		subcategories: [
+			{ id: "sexually-suggestive", label: "Sexually Suggestive" },
+			{ id: "implied-sex", label: "Implied Sex" },
+			{ id: "shown-without-nudity", label: "Shown Without Nudity" },
+			{ id: "shown-with-nudity", label: "Shown With Nudity" },
+			{ id: "sexual-assault", label: "Sexual Assault" },
+			{ id: "normal-kissing", label: "Normal Kissing" },
+			{ id: "passionate-kissing", label: "Passionate Kissing" },
+			{ id: "female-immodesty", label: "Female Immodesty" },
+			{ id: "male-immodesty", label: "Male Immodesty" },
+		],
+	},
+	{
+		id: "nudity",
+		label: "Nudity",
+		subcategories: [
+			{ id: "nudity-without-sex", label: "Nudity Without Sex" },
+			{ id: "statues-and-paintings", label: "Statues and Paintings" },
+			{ id: "implied-nudity", label: "Implied Nudity" },
+			{ id: "female-nudity", label: "Female Nudity" },
+			{ id: "male-nudity", label: "Male Nudity" },
+		],
+	},
+	{
+		id: "violence",
+		label: "Violence",
+		subcategories: [
+			{ id: "implied-violence", label: "Implied Violence" },
+			{ id: "non-graphic-violence", label: "Non-Graphic Violence" },
+			{ id: "graphic-violence", label: "Graphic Violence" },
+			{ id: "gore", label: "Gore" },
+			{ id: "disturbing-images", label: "Disturbing Images" },
+			{ id: "animal-violence", label: "Animal Violence" },
+		],
+	},
+	{
+		id: "substances",
+		label: "Substances",
+		subcategories: [
+			{ id: "implied-use", label: "Implied Use" },
+			{ id: "legal-use", label: "Legal Use" },
+			{ id: "illegal-use", label: "Illegal Use" },
+		],
+	},
+	{
+		id: "more",
+		label: "More",
+		subcategories: [
+			{ id: "credits", label: "Credits" },
+			{ id: "vulgar-gestures", label: "Vulgar Gestures" },
+			{ id: "objectionable-disturbing-scary", label: "Objectionable / Disturbing / Scary" },
+			{ id: "human-functions-medical", label: "Human Functions / Medical" },
+			{ id: "life-events", label: "Life Events" },
+			{ id: "bodily-functions-jokes", label: "Bodily Functions / Jokes" },
+			{ id: "medical-graphic", label: "Medical - Graphic" },
+			{ id: "medical-procedures", label: "Medical - Procedures" },
+		],
+	},
+];
 
 function normalizeVideoPath(videoFile) {
 	if (!videoFile || typeof videoFile !== "string") {
@@ -156,6 +231,12 @@ function normalizeCutList(cutList) {
 				normalizedCut.color = normalizeCutColor(cut.color || DEFAULT_REPLACEMENT_COLOR, index);
 			}
 
+			const reason = normalizeCutReason(cut.reason, index);
+
+			if (reason) {
+				normalizedCut.reason = reason;
+			}
+
 			return normalizedCut;
 		})
 		.sort((a, b) => Number.parseFloat(a.start) - Number.parseFloat(b.start));
@@ -190,6 +271,54 @@ function normalizeCutColor(color, index) {
 	}
 
 	return trimmed.toLowerCase();
+}
+
+function normalizeCutReason(reason, index) {
+	if (!reason) {
+		return null;
+	}
+
+	if (typeof reason !== "object" || Array.isArray(reason)) {
+		throw new Error(`Invalid cut reason at cut ${index}.`);
+	}
+
+	const category = findCutReasonCategory(reason.category);
+	const note = normalizeOptionalText(reason.note, 280);
+	const normalized = {};
+
+	if (category) {
+		normalized.category = category.id;
+
+		const subcategory = findCutReasonSubcategory(category.id, reason.subcategory);
+
+		if (subcategory) {
+			normalized.subcategory = subcategory.id;
+		} else if (reason.subcategory) {
+			throw new Error(`Invalid cut reason subcategory at cut ${index}: ${reason.subcategory}`);
+		}
+	} else if (reason.category) {
+		throw new Error(`Invalid cut reason category at cut ${index}: ${reason.category}`);
+	}
+
+	if (note) {
+		normalized.note = note;
+	}
+
+	return Object.keys(normalized).length ? normalized : null;
+}
+
+function findCutReasonCategory(categoryId) {
+	return CUT_REASON_CATEGORIES.find((category) => category.id === categoryId) || null;
+}
+
+function findCutReasonSubcategory(categoryId, subcategoryId) {
+	const category = findCutReasonCategory(categoryId);
+
+	if (!category || !subcategoryId) {
+		return null;
+	}
+
+	return category.subcategories.find((subcategory) => subcategory.id === subcategoryId) || null;
 }
 
 function normalizeEpisodeExternals(externals) {
@@ -313,6 +442,7 @@ function normalizeOptionalHttpUrl(value) {
 module.exports = {
 	CUT_MODE_REMOVE,
 	CUT_MODE_REPLACE,
+	CUT_REASON_CATEGORIES,
 	cutlistsDir,
 	DEFAULT_REPLACEMENT_COLOR,
 	getCutListConfigForVideo,

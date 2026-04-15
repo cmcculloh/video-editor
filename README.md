@@ -105,10 +105,11 @@ npm install
 1. Run the server by executing `npm start` or `node video_editor_server.cjs` in the terminal.
 2. Open a web browser and visit `http://localhost:3000/` to view the video editor interface.
 3. Choose a local video, then use the "Cut Start" and "Cut End" buttons to create ranges.
-4. Before sharing a cutlist, use "Episode Match" to search TVmaze and choose the canonical show episode for the file.
-5. Click "Save Cutlist" to save the local cuts, intro/outro choices, and episode identity.
+4. Select a cut to choose its reason category, VidAngel-style filter, and optional note.
+5. Before sharing a cutlist, use "Episode Match" to search TVmaze and choose the canonical show episode for the file.
+6. Click "Save Cutlist" to save the local cuts, intro/outro choices, episode identity, and cut reasons.
 
-Saved cutlists can include an `episodeIdentity` object with a canonical ID like `tvmaze:episode:163555`, the TVmaze show and episode IDs, season and episode numbers, and external show IDs such as IMDb or TheTVDB when TVmaze provides them. This gives shared cutlists a stable episode key instead of relying only on the local filename.
+Saved cutlists can include per-cut `reason` objects, plus an `episodeIdentity` object with a canonical ID like `tvmaze:episode:163555`, the TVmaze show and episode IDs, season and episode numbers, and external show IDs such as IMDb or TheTVDB when TVmaze provides them. This gives shared cutlists a stable episode key instead of relying only on the local filename.
 
 ### Step 2: Create a tv-edit-list.cjs file
 

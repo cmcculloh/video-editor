@@ -29,7 +29,12 @@
     {
       "start": "634.620037",
       "end": "669.956596",
-      "mode": "remove"
+      "mode": "remove",
+      "reason": {
+        "category": "nudity",
+        "subcategory": "implied-nudity",
+        "note": "Long gross sequence of villain groping and licking girl's face. She is topless, but strategically covered by her hair."
+      }
     },
     {
       "start": "734.692292",
@@ -83,5 +88,5 @@
   },
   "introSrc": null,
   "outroSrc": null,
-  "updatedAt": "2026-04-15T16:51:42.473Z"
+  "updatedAt": "2026-04-15T17:08:30.678Z"
 }

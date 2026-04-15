@@ -650,7 +650,8 @@ body:not(.has-video) .timeline {
 
 .cut-point-editor__actions,
 .cut-options-editor__actions,
-.cut-options-editor__cut-actions {
+.cut-options-editor__cut-actions,
+.cut-options-editor__reason {
 	align-items: end;
 	display: flex;
 	flex-wrap: wrap;
@@ -669,6 +670,14 @@ body:not(.has-video) .timeline {
 .cut-options-editor__cut-actions {
 	border-top: 1px solid var(--stroke);
 	grid-column: 1 / -1;
+	padding-top: 10px;
+}
+
+.cut-options-editor__reason {
+	border-top: 1px solid var(--stroke);
+	display: grid;
+	grid-column: 1 / -1;
+	grid-template-columns: minmax(160px, 0.5fr) minmax(210px, 0.7fr) minmax(220px, 1fr);
 	padding-top: 10px;
 }
 
@@ -1078,7 +1087,8 @@ body.has-final-video #final-empty {
 
 	.cut-point-editor__actions,
 	.cut-options-editor__actions,
-	.cut-options-editor__cut-actions {
+	.cut-options-editor__cut-actions,
+	.cut-options-editor__reason {
 		grid-column: 1 / -1;
 	}
 
@@ -1142,7 +1152,8 @@ body.has-final-video #final-empty {
 
 	.cut-point-editor__actions,
 	.cut-options-editor__actions,
-	.cut-options-editor__cut-actions {
+	.cut-options-editor__cut-actions,
+	.cut-options-editor__reason {
 		display: grid;
 		grid-template-columns: 1fr;
 	}

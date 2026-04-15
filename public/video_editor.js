@@ -48,6 +48,9 @@ const cutActionSelectElement = document.getElementById("cut-action-select");
 const cutColorInputElement = document.getElementById("cut-color-input");
 const cutColorPickVideoButton = document.getElementById("cut-color-pick-video");
 const cutColorSwatchElement = document.getElementById("cut-color-swatch");
+const cutReasonCategorySelectElement = document.getElementById("cut-reason-category-select");
+const cutReasonSubcategorySelectElement = document.getElementById("cut-reason-subcategory-select");
+const cutReasonNoteInputElement = document.getElementById("cut-reason-note-input");
 const mergePreviousCutButton = document.getElementById("merge-previous-cut");
 const mergeNextCutButton = document.getElementById("merge-next-cut");
 const deleteCutButton = document.getElementById("delete-cut");
@@ -92,6 +95,81 @@ const TIMELINE_THUMBNAIL_REFRESH_DELAY = 180;
 const CUT_MODE_REMOVE = "remove";
 const CUT_MODE_REPLACE = "replace";
 const DEFAULT_REPLACEMENT_COLOR = "#000000";
+const CUT_REASON_CATEGORIES = [
+	{
+		id: "language",
+		label: "Language",
+		subcategories: [
+			{ id: "profanity", label: "Profanity" },
+			{ id: "blasphemy", label: "Blasphemy" },
+			{ id: "childish-crude-language", label: "Childish / Crude Language" },
+			{ id: "racial-slurs-bigoted-language", label: "Racial Slurs / Bigoted Language" },
+			{ id: "sexual-reference-innuendo", label: "Sexual Reference / Innuendo" },
+			{ id: "captions-with-profanity", label: "Captions with Profanity" },
+		],
+	},
+	{
+		id: "intimacy",
+		label: "Intimacy",
+		subcategories: [
+			{ id: "sexually-suggestive", label: "Sexually Suggestive" },
+			{ id: "implied-sex", label: "Implied Sex" },
+			{ id: "shown-without-nudity", label: "Shown Without Nudity" },
+			{ id: "shown-with-nudity", label: "Shown With Nudity" },
+			{ id: "sexual-assault", label: "Sexual Assault" },
+			{ id: "normal-kissing", label: "Normal Kissing" },
+			{ id: "passionate-kissing", label: "Passionate Kissing" },
+			{ id: "female-immodesty", label: "Female Immodesty" },
+			{ id: "male-immodesty", label: "Male Immodesty" },
+		],
+	},
+	{
+		id: "nudity",
+		label: "Nudity",
+		subcategories: [
+			{ id: "nudity-without-sex", label: "Nudity Without Sex" },
+			{ id: "statues-and-paintings", label: "Statues and Paintings" },
+			{ id: "implied-nudity", label: "Implied Nudity" },
+			{ id: "female-nudity", label: "Female Nudity" },
+			{ id: "male-nudity", label: "Male Nudity" },
+		],
+	},
+	{
+		id: "violence",
+		label: "Violence",
+		subcategories: [
+			{ id: "implied-violence", label: "Implied Violence" },
+			{ id: "non-graphic-violence", label: "Non-Graphic Violence" },
+			{ id: "graphic-violence", label: "Graphic Violence" },
+			{ id: "gore", label: "Gore" },
+			{ id: "disturbing-images", label: "Disturbing Images" },
+			{ id: "animal-violence", label: "Animal Violence" },
+		],
+	},
+	{
+		id: "substances",
+		label: "Substances",
+		subcategories: [
+			{ id: "implied-use", label: "Implied Use" },
+			{ id: "legal-use", label: "Legal Use" },
+			{ id: "illegal-use", label: "Illegal Use" },
+		],
+	},
+	{
+		id: "more",
+		label: "More",
+		subcategories: [
+			{ id: "credits", label: "Credits" },
+			{ id: "vulgar-gestures", label: "Vulgar Gestures" },
+			{ id: "objectionable-disturbing-scary", label: "Objectionable / Disturbing / Scary" },
+			{ id: "human-functions-medical", label: "Human Functions / Medical" },
+			{ id: "life-events", label: "Life Events" },
+			{ id: "bodily-functions-jokes", label: "Bodily Functions / Jokes" },
+			{ id: "medical-graphic", label: "Medical - Graphic" },
+			{ id: "medical-procedures", label: "Medical - Procedures" },
+		],
+	},
+];
 
 let cutStart = null;
 let cutList = [];
@@ -119,6 +197,8 @@ setTransportControlsEnabled(false);
 updatePlaybackRateDisplay();
 updatePreviewSkipState();
 updateEpisodeMatchDisplay();
+populateCutReasonCategorySelect();
+populateCutReasonSubcategorySelect("");
 
 populateVideoSelect();
 const introOutroAssetsReady = populateIntroOutroSelects();
@@ -177,6 +257,35 @@ function createAssetOption(asset) {
 	option.value = asset;
 	option.textContent = asset;
 	return option;
+}
+
+function populateCutReasonCategorySelect() {
+	cutReasonCategorySelectElement.replaceChildren(new Option("Uncategorized", ""));
+
+	CUT_REASON_CATEGORIES.forEach((category) => {
+		cutReasonCategorySelectElement.appendChild(new Option(category.label, category.id));
+	});
+}
+
+function populateCutReasonSubcategorySelect(categoryId, selectedSubcategory = "") {
+	const category = getCutReasonCategory(categoryId);
+
+	cutReasonSubcategorySelectElement.replaceChildren();
+
+	if (!category) {
+		cutReasonSubcategorySelectElement.appendChild(new Option("Choose a reason first", ""));
+		cutReasonSubcategorySelectElement.disabled = true;
+		return;
+	}
+
+	cutReasonSubcategorySelectElement.appendChild(new Option("Choose a filter...", ""));
+	category.subcategories.forEach((subcategory) => {
+		cutReasonSubcategorySelectElement.appendChild(new Option(subcategory.label, subcategory.id));
+	});
+	cutReasonSubcategorySelectElement.disabled = false;
+	cutReasonSubcategorySelectElement.value = getCutReasonSubcategory(category.id, selectedSubcategory)
+		? selectedSubcategory
+		: "";
 }
 
 async function loadCutlist(selectedVideoSrc) {
@@ -904,6 +1013,31 @@ cutColorPickVideoButton.addEventListener("click", () => {
 	startVideoColorPick();
 });
 
+cutReasonCategorySelectElement.addEventListener("change", () => {
+	populateCutReasonSubcategorySelect(cutReasonCategorySelectElement.value);
+	updateSelectedCutReason({
+		category: cutReasonCategorySelectElement.value,
+		subcategory: "",
+	}, { showMessage: true });
+});
+
+cutReasonSubcategorySelectElement.addEventListener("change", () => {
+	updateSelectedCutReason({
+		category: cutReasonCategorySelectElement.value,
+		subcategory: cutReasonSubcategorySelectElement.value,
+	}, { showMessage: true });
+});
+
+cutReasonNoteInputElement.addEventListener("input", () => {
+	updateSelectedCutReason({ note: cutReasonNoteInputElement.value }, { showMessage: false });
+});
+
+cutReasonNoteInputElement.addEventListener("keydown", (event) => {
+	if (event.key === "Enter") {
+		cutReasonNoteInputElement.blur();
+	}
+});
+
 mergePreviousCutButton.addEventListener("click", () => {
 	mergeSelectedCut("previous");
 });
@@ -1389,6 +1523,7 @@ function normalizeCutRanges(cuts, duration) {
 			end: Number(cut.end),
 			mode: getCutMode(cut),
 			color: getCutColor(cut),
+			reason: getCutReason(cut),
 		}))
 		.filter((cut) => Number.isFinite(cut.start) && Number.isFinite(cut.end) && cut.end > cut.start)
 		.map((cut) => ({
@@ -1397,18 +1532,21 @@ function normalizeCutRanges(cuts, duration) {
 			end: clamp(cut.end, 0, duration),
 			mode: cut.mode,
 			color: cut.color,
+			reason: cut.reason,
 		}))
 		.filter((cut) => cut.end > cut.start);
 }
 
 function getCutMarkerTitle(cut) {
 	const timeRange = `${formatTime(cut.start)} to ${formatTime(cut.end)}`;
+	const reasonSummary = getCutReasonSummary(cut.reason);
+	const reasonPrefix = reasonSummary ? `${reasonSummary}: ` : "";
 
 	if (getCutMode(cut) === CUT_MODE_REPLACE) {
-		return `Cut ${cut.index + 1}: replace video with ${getCutColor(cut)} from ${timeRange}; audio preserved`;
+		return `Cut ${cut.index + 1}: ${reasonPrefix}replace video with ${getCutColor(cut)} from ${timeRange}; audio preserved`;
 	}
 
-	return `Cut ${cut.index + 1}: remove ${timeRange}`;
+	return `Cut ${cut.index + 1}: ${reasonPrefix}remove ${timeRange}`;
 }
 
 function createCutPointHandle(cut, edge, percent) {
@@ -1613,18 +1751,26 @@ function updateCutOptionsEditor() {
 	const mode = getCutMode(cut);
 	const color = getCutColor(cut);
 	const isReplaceMode = mode === CUT_MODE_REPLACE;
+	const reason = getCutReason(cut) || {};
+	const reasonSummary = getCutReasonSummary(reason);
+	const actionSummary = isReplaceMode
+		? `Replace video with ${color}; keep audio`
+		: "Remove from final edit";
 
 	cutOptionsEditorElement.hidden = false;
 	cutOptionsEditorElement.classList.toggle("is-remove", !isReplaceMode);
 	cutOptionsLabelElement.textContent = `Cut ${selectedCutIndex + 1} options`;
-	cutOptionsSummaryElement.textContent = isReplaceMode
-		? `Replace video with ${color}; keep audio`
-		: "Remove from final edit";
+	cutOptionsSummaryElement.textContent = reasonSummary
+		? `${reasonSummary} | ${actionSummary}`
+		: actionSummary;
 	cutActionSelectElement.value = mode;
 	cutColorInputElement.value = color;
 	cutColorInputElement.disabled = !isReplaceMode;
 	cutColorPickVideoButton.disabled = !videoSrc;
 	cutColorSwatchElement.style.backgroundColor = color;
+	cutReasonCategorySelectElement.value = reason.category || "";
+	populateCutReasonSubcategorySelect(reason.category, reason.subcategory);
+	cutReasonNoteInputElement.value = reason.note || "";
 	mergePreviousCutButton.disabled = selectedCutIndex <= 0;
 	mergeNextCutButton.disabled = selectedCutIndex >= cutList.length - 1;
 	deleteCutButton.disabled = false;
@@ -1671,6 +1817,42 @@ function updateSelectedCutOptions(changes, options = {}) {
 			showToast("Cut will keep audio", `Video will be replaced with ${cut.color}.`);
 		} else {
 			showToast("Cut will be removed", "This range will be left out of the final edit.");
+		}
+	}
+}
+
+function updateSelectedCutReason(changes, options = {}) {
+	if (!readEditableCutListForSelectedCut()) {
+		return;
+	}
+
+	const cut = cutList[selectedCutIndex];
+
+	if (!cut) {
+		clearSelectedCut();
+		return;
+	}
+
+	const reason = normalizeCutReasonDraft({
+		...(getCutReason(cut) || {}),
+		...changes,
+	});
+
+	if (reason) {
+		cut.reason = reason;
+	} else {
+		delete cut.reason;
+	}
+
+	updateCutlistDisplay();
+
+	if (options.showMessage) {
+		const summary = getCutReasonSummary(reason);
+
+		if (summary) {
+			showToast("Cut reason updated", summary);
+		} else {
+			showToast("Cut reason cleared", "This cut is uncategorized.", "warning");
 		}
 	}
 }
@@ -1907,6 +2089,78 @@ function normalizeHexColor(color) {
 	}
 
 	return trimmed.toLowerCase();
+}
+
+function getCutReason(cut) {
+	return normalizeCutReasonDraft(cut && cut.reason);
+}
+
+function normalizeCutReasonDraft(reason) {
+	if (!reason || typeof reason !== "object" || Array.isArray(reason)) {
+		return null;
+	}
+
+	const category = getCutReasonCategory(reason.category);
+	const note = normalizeCutReasonNote(reason.note);
+	const normalized = {};
+
+	if (category) {
+		normalized.category = category.id;
+
+		const subcategory = getCutReasonSubcategory(category.id, reason.subcategory);
+
+		if (subcategory) {
+			normalized.subcategory = subcategory.id;
+		}
+	}
+
+	if (note) {
+		normalized.note = note;
+	}
+
+	return Object.keys(normalized).length ? normalized : null;
+}
+
+function normalizeCutReasonNote(note) {
+	if (note === null || note === undefined) {
+		return "";
+	}
+
+	const normalized = String(note).replace(/\s+/g, " ").slice(0, 280);
+
+	return normalized.trim() ? normalized : "";
+}
+
+function getCutReasonCategory(categoryId) {
+	return CUT_REASON_CATEGORIES.find((category) => category.id === categoryId) || null;
+}
+
+function getCutReasonSubcategory(categoryId, subcategoryId) {
+	const category = getCutReasonCategory(categoryId);
+
+	if (!category) {
+		return null;
+	}
+
+	return category.subcategories.find((subcategory) => subcategory.id === subcategoryId) || null;
+}
+
+function getCutReasonSummary(reason) {
+	const normalizedReason = normalizeCutReasonDraft(reason);
+
+	if (!normalizedReason) {
+		return "";
+	}
+
+	const category = getCutReasonCategory(normalizedReason.category);
+	const subcategory = getCutReasonSubcategory(normalizedReason.category, normalizedReason.subcategory);
+	const classification = [
+		category && category.label,
+		subcategory && subcategory.label,
+	].filter(Boolean).join(": ");
+	const note = normalizedReason.note ? normalizedReason.note.trim() : "";
+
+	return [classification, note].filter(Boolean).join(" - ");
 }
 
 function updateSelectedCutPointFromPointer(event, options = {}) {
