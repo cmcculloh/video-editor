@@ -72,6 +72,59 @@
                     </div>
                 </div>
 
+                <section class="timeline-panel" aria-label="Timeline">
+                    <div class="timeline-panel__header">
+                        <div>
+                            <h2>Timeline</h2>
+                            <p id="timeline-status" class="hint">Choose a video to build the thumbnail strip.</p>
+                        </div>
+                        <span id="timeline-duration" class="meta-pill">00:00:00</span>
+                    </div>
+                    <div class="timeline-tools" aria-label="Timeline zoom controls">
+                        <button id="timeline-zoom-out" class="button button--ghost" type="button" disabled>Zoom Out</button>
+                        <button id="timeline-zoom-in" class="button button--secondary" type="button" disabled>Zoom In</button>
+                        <button id="timeline-fit" class="button button--ghost" type="button" disabled>Fit</button>
+                        <button id="timeline-center-playhead" class="button button--ghost" type="button" disabled>Center Playhead</button>
+                        <span id="timeline-window" class="rate-pill">Full timeline</span>
+                    </div>
+                    <div
+                        id="timeline"
+                        class="timeline"
+                        role="slider"
+                        tabindex="0"
+                        aria-label="Video timeline"
+                        aria-valuemin="0"
+                        aria-valuemax="0"
+                        aria-valuenow="0"
+                        aria-valuetext="00:00:00.000"
+                    >
+                        <div id="timeline-thumbnails" class="timeline__thumbnails" aria-hidden="true"></div>
+                        <div id="timeline-cuts" class="timeline__cuts" aria-hidden="true"></div>
+                        <div id="timeline-playhead" class="timeline__playhead" aria-hidden="true">
+                            <span></span>
+                        </div>
+                    </div>
+                    <div class="timeline-scale" aria-hidden="true">
+                        <span id="timeline-start">00:00:00</span>
+                        <span id="timeline-end">00:00:00</span>
+                    </div>
+                    <section id="cut-point-editor" class="cut-point-editor" aria-live="polite" hidden>
+                        <div class="cut-point-editor__summary">
+                            <span id="cut-point-label">No cut point selected</span>
+                            <strong id="cut-point-time">00:00:00.000</strong>
+                        </div>
+                        <label class="field field--compact" for="cut-point-input">
+                            <span>Seconds</span>
+                            <input id="cut-point-input" type="number" min="0" step="0.001" inputmode="decimal">
+                        </label>
+                        <div class="cut-point-editor__actions">
+                            <button id="cut-point-use-playhead" class="button button--secondary" type="button">Set to Playhead</button>
+                            <button id="cut-point-clear" class="button button--ghost" type="button">Done</button>
+                        </div>
+                        <p class="hint">Drag a handle, use arrow keys to nudge, or enter an exact second.</p>
+                    </section>
+                </section>
+
                 <div id="viewer-readout" class="viewer-readout" aria-label="Viewer readout">
                     <div class="readout-item">
                         <span>Timecode</span>
@@ -103,6 +156,11 @@
                             <input type="checkbox" id="frame-step-seek">
                             <span>Frame seek</span>
                         </label>
+                        <label class="toggle toggle--preview">
+                            <input type="checkbox" id="skip-cuts-preview">
+                            <span>Skip cuts</span>
+                        </label>
+                        <span id="skip-cuts-status" class="rate-pill">Preview off</span>
                     </div>
                     <div class="control-group">
                         <button id="slowDown" class="button button--ghost" disabled>Slower</button>
@@ -165,6 +223,7 @@
             <span>Cut Start, Cut End, Save, Edit</span>
         </footer>
     </main>
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
 
     <script src="video_editor.js"></script>
 </body>
