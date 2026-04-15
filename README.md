@@ -102,10 +102,13 @@ npm install
 
 ### Step 1: Create a cutlist
 
-1. Run the server by executing `node video_editor_server.cjs` in the terminal.
-2. Open a web browser and visit `http://localhost:3000/video_editor.html` to view the video editor interface.
-3. Use the video editor interface to create cuts by clicking the "Cut Start" and "Cut End" buttons. The cutlist will be displayed on the page.
-4. Click the "Copy Cutlist" button to copy the cutlist to your clipboard.
+1. Run the server by executing `npm start` or `node video_editor_server.cjs` in the terminal.
+2. Open a web browser and visit `http://localhost:3000/` to view the video editor interface.
+3. Choose a local video, then use the "Cut Start" and "Cut End" buttons to create ranges.
+4. Before sharing a cutlist, use "Episode Match" to search TVmaze and choose the canonical show episode for the file.
+5. Click "Save Cutlist" to save the local cuts, intro/outro choices, and episode identity.
+
+Saved cutlists can include an `episodeIdentity` object with a canonical ID like `tvmaze:episode:163555`, the TVmaze show and episode IDs, season and episode numbers, and external show IDs such as IMDb or TheTVDB when TVmaze provides them. This gives shared cutlists a stable episode key instead of relying only on the local filename.
 
 ### Step 2: Create a tv-edit-list.cjs file
 
@@ -129,4 +132,3 @@ The "edit_video.cjs" script reads the cutlist from "tv-edit-list.cjs", processes
 You can add a custom intro to your TV edits so that when you start watching one you know immediately whether you are watching the TV edit or not.
 
 1. Create an `./public/INTRO.mp4` file
-

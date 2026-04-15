@@ -51,6 +51,17 @@ const cutColorSwatchElement = document.getElementById("cut-color-swatch");
 const mergePreviousCutButton = document.getElementById("merge-previous-cut");
 const mergeNextCutButton = document.getElementById("merge-next-cut");
 const deleteCutButton = document.getElementById("delete-cut");
+const episodeSearchInput = document.getElementById("episode-search-input");
+const episodeSearchButton = document.getElementById("episode-search-button");
+const episodeClearButton = document.getElementById("episode-clear");
+const episodeMatchStatusElement = document.getElementById("episode-match-status");
+const episodePickerElement = document.getElementById("episode-picker");
+const showMatchSelect = document.getElementById("show-match-select");
+const episodeMatchSelect = document.getElementById("episode-match-select");
+const episodeSelectedElement = document.getElementById("episode-selected");
+const episodeSelectedTitle = document.getElementById("episode-selected-title");
+const episodeSelectedDetails = document.getElementById("episode-selected-details");
+const episodeSelectedLink = document.getElementById("episode-selected-link");
 const toastRegionElement = document.getElementById("toast-region");
 const seekBackwardButton = document.getElementById("seekBackward");
 const seekForwardButton = document.getElementById("seekForward");
@@ -96,13 +107,18 @@ let activeCutPointDrag = null;
 let previewSkipFrame = null;
 let lastSkippedCutEnd = null;
 let videoColorPickActive = false;
+let episodeIdentity = null;
+let showSearchResults = [];
+let currentShowEpisodes = [];
 
 document.body.classList.toggle("has-video", Boolean(videoSrc));
 selectedVideoLabel.textContent = videoSrc ? getFileName(videoSrc) : "No video loaded";
+episodeSearchInput.value = guessShowSearchQuery(videoSrc);
 setActionControlsEnabled(Boolean(videoSrc));
 setTransportControlsEnabled(false);
 updatePlaybackRateDisplay();
 updatePreviewSkipState();
+updateEpisodeMatchDisplay();
 
 populateVideoSelect();
 const introOutroAssetsReady = populateIntroOutroSelects();
@@ -173,9 +189,14 @@ async function loadCutlist(selectedVideoSrc) {
 		}
 
 		cutList = data.cutList;
+		episodeIdentity = data.episodeIdentity || null;
+		if (episodeIdentity && episodeIdentity.showName) {
+			episodeSearchInput.value = episodeIdentity.showName;
+		}
 		introSelect.value = data.introSrc || "";
 		outroSelect.value = data.outroSrc || "";
 		updateCutlistDisplay();
+		updateEpisodeMatchDisplay();
 		updateIntroOutroPreviews();
 
 		if (data.exists) {
@@ -218,6 +239,25 @@ videoSelect.addEventListener("change", () => {
 
 introSelect.addEventListener("change", updateIntroOutroPreviews);
 outroSelect.addEventListener("change", updateIntroOutroPreviews);
+episodeSearchButton.addEventListener("click", searchShowsForEpisodeMatch);
+episodeSearchInput.addEventListener("keydown", (event) => {
+	if (event.key === "Enter") {
+		event.preventDefault();
+		searchShowsForEpisodeMatch();
+	}
+});
+showMatchSelect.addEventListener("change", () => {
+	loadEpisodesForSelectedShow({ preserveExistingSelection: false });
+});
+episodeMatchSelect.addEventListener("change", () => {
+	selectEpisodeIdentityById(episodeMatchSelect.value, { showMessage: true });
+});
+episodeClearButton.addEventListener("click", () => {
+	episodeIdentity = null;
+	episodeMatchSelect.value = "";
+	updateEpisodeMatchDisplay();
+	showToast("Episode match cleared", "This cutlist will only be tied to its local file until you choose another match.", "warning");
+});
 
 function updateIntroOutroPreviews() {
 	updateAssetPreview(introSelect.value, introSelected, introPreview);
@@ -237,6 +277,318 @@ function updateAssetPreview(asset, selectedElement, previewElement) {
 	previewElement.src = `intros-and-outros/${asset.split("/").map(encodeURIComponent).join("/")}`;
 	previewElement.hidden = false;
 	previewElement.load();
+}
+
+async function searchShowsForEpisodeMatch() {
+	const query = episodeSearchInput.value.trim();
+
+	if (query.length < 2) {
+		showToast("Search needs a name", "Enter at least two characters from the show title.", "warning");
+		return;
+	}
+
+	episodeSearchButton.disabled = true;
+	episodeMatchStatusElement.textContent = "Searching TVmaze...";
+
+	try {
+		const data = await fetchJson(`/metadata/search-shows?q=${encodeURIComponent(query)}`, "Failed to search TVmaze.");
+
+		showSearchResults = data.shows || [];
+		currentShowEpisodes = [];
+		populateShowMatchSelect();
+
+		if (!showSearchResults.length) {
+			episodePickerElement.hidden = true;
+			episodeMatchStatusElement.textContent = "No matching shows found.";
+			return;
+		}
+
+		episodePickerElement.hidden = false;
+		const existingShow = episodeIdentity
+			? showSearchResults.find((show) => String(show.showId) === String(episodeIdentity.showId))
+			: null;
+
+		showMatchSelect.value = String(existingShow ? existingShow.showId : showSearchResults[0].showId);
+		await loadEpisodesForSelectedShow({ preserveExistingSelection: Boolean(existingShow) });
+	} catch (error) {
+		console.error("Error searching TVmaze:", error);
+		episodeMatchStatusElement.textContent = error.message;
+		showToast("Could not search TVmaze", error.message, "error");
+	} finally {
+		episodeSearchButton.disabled = false;
+	}
+}
+
+async function fetchJson(url, fallbackMessage) {
+	const response = await fetch(url);
+	const contentType = response.headers.get("content-type") || "";
+
+	if (contentType.includes("application/json")) {
+		const data = await response.json();
+
+		if (!response.ok) {
+			throw new Error(data.error || fallbackMessage);
+		}
+
+		return data;
+	}
+
+	const text = await response.text();
+	throw new Error(getNonJsonResponseMessage(response, text, fallbackMessage));
+}
+
+function getNonJsonResponseMessage(response, text, fallbackMessage) {
+	const snippet = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+
+	if (response.status === 404 && response.url.includes("/metadata/")) {
+		return "The TVmaze metadata API was not found. Restart the video editor server so the new episode-matching routes are loaded.";
+	}
+
+	if (snippet) {
+		return `${fallbackMessage} Server returned ${response.status} ${response.statusText}: ${snippet}`;
+	}
+
+	return `${fallbackMessage} Server returned ${response.status} ${response.statusText}.`;
+}
+
+function populateShowMatchSelect() {
+	showMatchSelect.replaceChildren();
+
+	showSearchResults.forEach((show) => {
+		const option = document.createElement("option");
+		option.value = String(show.showId);
+		option.textContent = formatShowOption(show);
+		option.title = show.summary || option.textContent;
+		showMatchSelect.appendChild(option);
+	});
+}
+
+async function loadEpisodesForSelectedShow(options = {}) {
+	const showId = showMatchSelect.value;
+
+	if (!showId) {
+		return;
+	}
+
+	episodeMatchSelect.disabled = true;
+	episodeMatchSelect.replaceChildren(new Option("Loading episodes...", ""));
+	episodeMatchStatusElement.textContent = "Loading episodes...";
+
+	try {
+		const data = await fetchJson(`/metadata/shows/${encodeURIComponent(showId)}/episodes`, "Failed to load episodes.");
+
+		currentShowEpisodes = data.episodes || [];
+		populateEpisodeMatchSelect(data.show, options);
+		if (!episodeIdentity) {
+			episodeMatchStatusElement.textContent = currentShowEpisodes.length
+				? "Choose the episode this file belongs to."
+				: "No episodes found for this show.";
+		}
+	} catch (error) {
+		console.error("Error loading episodes:", error);
+		currentShowEpisodes = [];
+		episodeMatchStatusElement.textContent = error.message;
+		showToast("Could not load episodes", error.message, "error");
+	} finally {
+		episodeMatchSelect.disabled = false;
+	}
+}
+
+function populateEpisodeMatchSelect(show, options = {}) {
+	const preserveExistingSelection = options.preserveExistingSelection !== false;
+	const placeholder = new Option("Choose an episode...", "");
+	let targetEpisodeId = "";
+
+	episodeMatchSelect.replaceChildren(placeholder);
+
+	currentShowEpisodes.forEach((episode) => {
+		const option = document.createElement("option");
+		option.value = String(episode.episodeId);
+		option.textContent = formatEpisodeOption(episode);
+		option.title = episode.summary || option.textContent;
+		episodeMatchSelect.appendChild(option);
+	});
+
+	if (preserveExistingSelection && episodeIdentity && String(episodeIdentity.showId) === String(show.showId)) {
+		targetEpisodeId = String(episodeIdentity.episodeId);
+	} else {
+		const guess = guessSeasonEpisode(videoSrc);
+		const guessedEpisode = guess
+			? currentShowEpisodes.find((episode) => episode.season === guess.season && episode.number === guess.number)
+			: null;
+
+		if (guessedEpisode) {
+			targetEpisodeId = String(guessedEpisode.episodeId);
+		}
+	}
+
+	if (targetEpisodeId && currentShowEpisodes.some((episode) => String(episode.episodeId) === targetEpisodeId)) {
+		episodeMatchSelect.value = targetEpisodeId;
+		selectEpisodeIdentityById(targetEpisodeId);
+		return;
+	}
+
+	episodeMatchSelect.value = "";
+
+	if (!preserveExistingSelection) {
+		episodeIdentity = null;
+		updateEpisodeMatchDisplay();
+	}
+}
+
+function selectEpisodeIdentityById(episodeId, options = {}) {
+	if (!episodeId) {
+		return;
+	}
+
+	const episode = currentShowEpisodes.find((item) => String(item.episodeId) === String(episodeId));
+
+	if (!episode) {
+		return;
+	}
+
+	episodeIdentity = {
+		provider: episode.provider,
+		canonicalId: episode.canonicalId,
+		showId: episode.showId,
+		episodeId: episode.episodeId,
+		showName: episode.showName,
+		episodeTitle: episode.episodeTitle,
+		season: episode.season,
+		number: episode.number,
+		airdate: episode.airdate,
+		url: episode.url,
+		showUrl: episode.showUrl,
+		externals: episode.externals || {},
+		selectedAt: new Date().toISOString(),
+	};
+	updateEpisodeMatchDisplay();
+
+	if (options.showMessage) {
+		showToast("Episode matched", `${formatEpisodeCode(episodeIdentity)} ${episodeIdentity.showName}: ${episodeIdentity.episodeTitle}`);
+	}
+}
+
+function updateEpisodeMatchDisplay() {
+	if (!episodeIdentity) {
+		episodeSelectedElement.hidden = true;
+		episodeClearButton.disabled = true;
+		episodeSelectedTitle.textContent = "";
+		episodeSelectedDetails.textContent = "";
+		episodeSelectedLink.removeAttribute("href");
+		episodeMatchStatusElement.textContent = episodePickerElement.hidden
+			? "Choose a TVmaze episode before sharing this cutlist."
+			: "Choose an episode from the list.";
+		return;
+	}
+
+	const details = [
+		formatEpisodeCode(episodeIdentity),
+		episodeIdentity.airdate ? `Aired ${episodeIdentity.airdate}` : null,
+		episodeIdentity.canonicalId,
+		episodeIdentity.externals && episodeIdentity.externals.imdb ? `IMDb ${episodeIdentity.externals.imdb}` : null,
+		episodeIdentity.externals && episodeIdentity.externals.thetvdb ? `TheTVDB ${episodeIdentity.externals.thetvdb}` : null,
+	].filter(Boolean);
+
+	episodeSelectedElement.hidden = false;
+	episodeClearButton.disabled = false;
+	episodeSelectedTitle.textContent = `${episodeIdentity.showName}: ${episodeIdentity.episodeTitle || "Untitled episode"}`;
+	episodeSelectedDetails.textContent = details.join(" | ");
+	episodeMatchStatusElement.textContent = "This cutlist has a canonical episode identity.";
+
+	if (episodeIdentity.url) {
+		episodeSelectedLink.href = episodeIdentity.url;
+		episodeSelectedLink.hidden = false;
+	} else {
+		episodeSelectedLink.removeAttribute("href");
+		episodeSelectedLink.hidden = true;
+	}
+
+	if (currentShowEpisodes.some((episode) => String(episode.episodeId) === String(episodeIdentity.episodeId))) {
+		episodeMatchSelect.value = String(episodeIdentity.episodeId);
+	}
+}
+
+function formatShowOption(show) {
+	const years = [show.premiered && show.premiered.slice(0, 4), show.ended && show.ended.slice(0, 4)]
+		.filter(Boolean)
+		.join("-");
+	const source = show.networkName || show.webChannelName || show.language;
+
+	return [show.name, years || null, source].filter(Boolean).join(" | ");
+}
+
+function formatEpisodeOption(episode) {
+	return [
+		formatEpisodeCode(episode),
+		episode.episodeTitle || "Untitled episode",
+		episode.airdate,
+	].filter(Boolean).join(" | ");
+}
+
+function formatEpisodeCode(episode) {
+	if (Number.isInteger(episode.season) && Number.isInteger(episode.number)) {
+		return `S${String(episode.season).padStart(2, "0")}E${String(episode.number).padStart(2, "0")}`;
+	}
+
+	if (Number.isInteger(episode.season)) {
+		return `S${String(episode.season).padStart(2, "0")} special`;
+	}
+
+	return "Episode";
+}
+
+function guessSeasonEpisode(src) {
+	if (!src) {
+		return null;
+	}
+
+	const decoded = safeDecodeURIComponent(src);
+	const seasonEpisodeMatch =
+		decoded.match(/(?:^|[^0-9a-z])s(\d{1,3})\s*e(\d{1,3})(?:[^0-9a-z]|$)/i) ||
+		decoded.match(/(?:^|[^0-9a-z])(\d{1,3})x(\d{1,3})(?:[^0-9a-z]|$)/i);
+
+	if (!seasonEpisodeMatch) {
+		return null;
+	}
+
+	return {
+		season: Number(seasonEpisodeMatch[1]),
+		number: Number(seasonEpisodeMatch[2]),
+	};
+}
+
+function guessShowSearchQuery(src) {
+	if (!src) {
+		return "";
+	}
+
+	const decoded = safeDecodeURIComponent(src).replaceAll("\\", "/");
+	const parts = decoded.split("/").filter(Boolean);
+	const candidate = parts.length > 1 ? parts[parts.length - 2] : parts[parts.length - 1];
+
+	return cleanSearchCandidate(candidate || "");
+}
+
+function cleanSearchCandidate(value) {
+	return value
+		.replace(/\.[^.]+$/, "")
+		.replace(/\[[^\]]*]/g, " ")
+		.replace(/\([^)]*\)/g, " ")
+		.replace(/(?:^|[^0-9a-z])s\d{1,3}\s*e\d{1,3}(?:[^0-9a-z]|$)/gi, " ")
+		.replace(/(?:^|[^0-9a-z])\d{1,3}x\d{1,3}(?:[^0-9a-z]|$)/gi, " ")
+		.replace(/\b(480p|720p|1080p|2160p|x264|x265|h264|h265|hevc|aac|bluray|web-dl|webrip)\b/gi, " ")
+		.replace(/[_\-.]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function safeDecodeURIComponent(value) {
+	try {
+		return decodeURIComponent(value);
+	} catch (error) {
+		return value;
+	}
 }
 
 
@@ -366,6 +718,14 @@ function readCutlistFromEditor() {
 
 	if (!Array.isArray(editedCutList)) {
 		throw new Error("Cutlist must be a JSON array or an object with a cutList array.");
+	}
+
+	if (!Array.isArray(parsed) && Object.prototype.hasOwnProperty.call(parsed, "episodeIdentity")) {
+		episodeIdentity = parsed.episodeIdentity || null;
+		if (episodeIdentity && episodeIdentity.showName) {
+			episodeSearchInput.value = episodeIdentity.showName;
+		}
+		updateEpisodeMatchDisplay();
 	}
 
 	updateCutCount(editedCutList.length);
@@ -1871,6 +2231,7 @@ async function saveCutlist() {
 		body: JSON.stringify({
 			videoSrc,
 			cutList,
+			episodeIdentity,
 			introSrc: introSelect.value,
 			outroSrc: outroSelect.value,
 		}),
@@ -1981,6 +2342,7 @@ editVideoButton.addEventListener("click", async () => {
 			body: JSON.stringify({
 				videoSrc,
 				cutList,
+				episodeIdentity,
 				introSrc: introSelect.value,
 				outroSrc: outroSelect.value,
 				debugBlackCuts: debugBlackCutsInput.checked,

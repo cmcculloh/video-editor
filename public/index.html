@@ -55,6 +55,41 @@
             </article>
         </section>
 
+        <section class="episode-panel" aria-label="Episode match">
+            <div class="episode-panel__header">
+                <div>
+                    <h2>Episode Match</h2>
+                    <p id="episode-match-status" class="hint">Choose a TVmaze episode before sharing this cutlist.</p>
+                </div>
+                <button id="episode-clear" class="button button--ghost" type="button" disabled>Clear Match</button>
+            </div>
+            <div class="episode-search">
+                <label class="field" for="episode-search-input">
+                    <span>Show search</span>
+                    <input id="episode-search-input" type="search" autocomplete="off" placeholder="Search a show name">
+                </label>
+                <button id="episode-search-button" class="button button--secondary" type="button">Search TVmaze</button>
+            </div>
+            <div id="episode-picker" class="episode-picker" hidden>
+                <label class="field" for="show-match-select">
+                    <span>Show</span>
+                    <select id="show-match-select"></select>
+                </label>
+                <label class="field field--wide" for="episode-match-select">
+                    <span>Episode</span>
+                    <select id="episode-match-select"></select>
+                </label>
+            </div>
+            <div id="episode-selected" class="episode-selected" hidden>
+                <div>
+                    <span>Selected episode</span>
+                    <strong id="episode-selected-title"></strong>
+                    <p id="episode-selected-details" class="hint"></p>
+                </div>
+                <a id="episode-selected-link" class="button button--ghost" target="_blank" rel="noopener">Open TVmaze</a>
+            </div>
+        </section>
+
         <section class="workspace">
             <section class="preview-column" aria-label="Source editor">
                 <div class="video-stage">

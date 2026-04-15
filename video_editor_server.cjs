@@ -1,4 +1,5 @@
 const express = require("express");
+const axios = require("axios");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -9,6 +10,7 @@ const {
 	getIntroOutroPath,
 	introsAndOutrosDir,
 	normalizeCutList,
+	normalizeEpisodeIdentity,
 	normalizeVideoPath,
 } = require("./tv-edit-list.cjs");
 const app = express();
@@ -70,6 +72,7 @@ app.get("/cutlists", async (req, res) => {
 			res.json({
 				exists: false,
 				cutList: [],
+				episodeIdentity: null,
 				introSrc: null,
 				outroSrc: null,
 				path: path.relative(__dirname, cutListPath),
@@ -79,10 +82,11 @@ app.get("/cutlists", async (req, res) => {
 
 		const cutListData = JSON.parse(await fs.promises.readFile(cutListPath, "utf8"));
 		const cutList = normalizeCutList(Array.isArray(cutListData) ? cutListData : cutListData.cutList);
+		const episodeIdentity = normalizeEpisodeIdentity(cutListData.episodeIdentity);
 		const introSrc = normalizeOptionalIntroOutro(cutListData.introSrc);
 		const outroSrc = normalizeOptionalIntroOutro(cutListData.outroSrc);
 
-		res.json({ exists: true, cutList, introSrc, outroSrc, path: path.relative(__dirname, cutListPath) });
+		res.json({ exists: true, cutList, episodeIdentity, introSrc, outroSrc, path: path.relative(__dirname, cutListPath) });
 	} catch (error) {
 		console.error("Error loading cutlist:", error);
 		res.status(400).json({ error: error.message || "Failed to load cutlist" });
@@ -93,9 +97,10 @@ app.post("/cutlists", async (req, res) => {
 	try {
 		const videoSrc = normalizeVideoPath(req.body.videoSrc);
 		const cutList = normalizeCutList(req.body.cutList);
+		const episodeIdentity = normalizeEpisodeIdentity(req.body.episodeIdentity);
 		const introSrc = normalizeOptionalIntroOutro(req.body.introSrc);
 		const outroSrc = normalizeOptionalIntroOutro(req.body.outroSrc);
-		const cutListPath = await saveCutlistForVideo(videoSrc, { cutList, introSrc, outroSrc });
+		const cutListPath = await saveCutlistForVideo(videoSrc, { cutList, episodeIdentity, introSrc, outroSrc });
 		const editCommand = getEditCommand(videoSrc, { introSrc, outroSrc });
 
 		res.json({ ok: true, path: path.relative(__dirname, cutListPath), editCommand });
@@ -105,14 +110,48 @@ app.post("/cutlists", async (req, res) => {
 	}
 });
 
+app.get("/metadata/search-shows", async (req, res) => {
+	try {
+		const query = normalizeMetadataSearchQuery(req.query.q);
+		const results = await getTvmazeData("/search/shows", { q: query });
+
+		res.json({
+			shows: results.slice(0, 12).map(normalizeTvmazeShowSearchResult),
+		});
+	} catch (error) {
+		console.error("Error searching TVmaze shows:", error);
+		res.status(getMetadataErrorStatus(error)).json({ error: error.message || "Failed to search shows" });
+	}
+});
+
+app.get("/metadata/shows/:showId/episodes", async (req, res) => {
+	try {
+		const showId = normalizeTvmazeId(req.params.showId, "TVmaze show ID");
+		const [show, episodes] = await Promise.all([
+			getTvmazeData(`/shows/${showId}`),
+			getTvmazeData(`/shows/${showId}/episodes`, { specials: "1" }),
+		]);
+		const normalizedShow = normalizeTvmazeShow(show);
+
+		res.json({
+			show: normalizedShow,
+			episodes: episodes.map((episode) => normalizeTvmazeEpisode(episode, normalizedShow)),
+		});
+	} catch (error) {
+		console.error("Error loading TVmaze episodes:", error);
+		res.status(getMetadataErrorStatus(error)).json({ error: error.message || "Failed to load episodes" });
+	}
+});
+
 app.post("/edits", async (req, res) => {
 	try {
 		const videoSrc = normalizeVideoPath(req.body.videoSrc);
 		const cutList = normalizeCutList(req.body.cutList);
+		const episodeIdentity = normalizeEpisodeIdentity(req.body.episodeIdentity);
 		const introSrc = normalizeOptionalIntroOutro(req.body.introSrc);
 		const outroSrc = normalizeOptionalIntroOutro(req.body.outroSrc);
 		const debugBlackCuts = Boolean(req.body.debugBlackCuts);
-		const cutListPath = await saveCutlistForVideo(videoSrc, { cutList, introSrc, outroSrc });
+		const cutListPath = await saveCutlistForVideo(videoSrc, { cutList, episodeIdentity, introSrc, outroSrc });
 		const command = getEditCommand(videoSrc, { introSrc, outroSrc, debugBlackCuts });
 		const output = path.join("public", getEditedVideoPath(videoSrc, { debugBlackCuts })).split(path.sep).join("/");
 		const outputUrl = getEditedVideoPath(videoSrc, { debugBlackCuts }).split(path.sep).map(encodeURIComponent).join("/");
@@ -234,6 +273,157 @@ async function getVideoFiles(directory, baseDirectory = directory) {
 	return videos.flat().sort((a, b) => a.localeCompare(b));
 }
 
+function normalizeMetadataSearchQuery(query) {
+	if (typeof query !== "string") {
+		throw new Error("Search query is required.");
+	}
+
+	const normalized = query.trim().replace(/\s+/g, " ");
+
+	if (normalized.length < 2) {
+		throw new Error("Search query must be at least 2 characters.");
+	}
+
+	return normalized.slice(0, 100);
+}
+
+function normalizeTvmazeId(value, label) {
+	const normalized = Number(value);
+
+	if (!Number.isInteger(normalized) || normalized <= 0) {
+		throw new Error(`${label} must be a positive integer.`);
+	}
+
+	return normalized;
+}
+
+async function getTvmazeData(pathname, params = {}) {
+	const url = new URL(pathname, "https://api.tvmaze.com");
+
+	Object.entries(params).forEach(([key, value]) => {
+		url.searchParams.set(key, value);
+	});
+
+	try {
+		const response = await axios.get(url.toString(), {
+			headers: { Accept: "application/json" },
+			timeout: 10000,
+		});
+
+		return response.data;
+	} catch (error) {
+		if (error.response && error.response.status === 404) {
+			throw new Error("TVmaze could not find that show or episode.");
+		}
+
+		if (error.response && error.response.status === 429) {
+			throw new Error("TVmaze rate limit reached. Wait a moment and try again.");
+		}
+
+		throw new Error("TVmaze is unavailable right now.");
+	}
+}
+
+function normalizeTvmazeShowSearchResult(result) {
+	return {
+		score: Number(result.score) || 0,
+		...normalizeTvmazeShow(result.show),
+	};
+}
+
+function normalizeTvmazeShow(show) {
+	return {
+		provider: "tvmaze",
+		showId: normalizeTvmazeId(show.id, "TVmaze show ID"),
+		name: show.name || "Untitled show",
+		type: show.type || null,
+		language: show.language || null,
+		premiered: normalizeTvmazeDate(show.premiered),
+		ended: normalizeTvmazeDate(show.ended),
+		status: show.status || null,
+		networkName: show.network && show.network.name ? show.network.name : null,
+		webChannelName: show.webChannel && show.webChannel.name ? show.webChannel.name : null,
+		url: show.url || null,
+		imageUrl: getTvmazeImageUrl(show),
+		externals: normalizeTvmazeExternals(show.externals),
+		summary: stripHtml(show.summary).slice(0, 360),
+	};
+}
+
+function normalizeTvmazeEpisode(episode, show) {
+	return {
+		provider: "tvmaze",
+		canonicalId: `tvmaze:episode:${normalizeTvmazeId(episode.id, "TVmaze episode ID")}`,
+		showId: show.showId,
+		episodeId: normalizeTvmazeId(episode.id, "TVmaze episode ID"),
+		showName: show.name,
+		episodeTitle: episode.name || "Untitled episode",
+		season: Number.isInteger(episode.season) ? episode.season : null,
+		number: Number.isInteger(episode.number) ? episode.number : null,
+		type: episode.type || null,
+		airdate: normalizeTvmazeDate(episode.airdate),
+		url: episode.url || null,
+		showUrl: show.url,
+		imageUrl: getTvmazeImageUrl(episode),
+		externals: show.externals,
+		summary: stripHtml(episode.summary).slice(0, 360),
+	};
+}
+
+function normalizeTvmazeDate(value) {
+	return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function normalizeTvmazeExternals(externals) {
+	if (!externals || typeof externals !== "object") {
+		return {};
+	}
+
+	const normalized = {};
+
+	if (externals.imdb) {
+		normalized.imdb = String(externals.imdb);
+	}
+
+	if (Number.isInteger(externals.thetvdb)) {
+		normalized.thetvdb = externals.thetvdb;
+	}
+
+	if (Number.isInteger(externals.tvrage)) {
+		normalized.tvrage = externals.tvrage;
+	}
+
+	return normalized;
+}
+
+function getTvmazeImageUrl(item) {
+	if (!item || !item.image) {
+		return null;
+	}
+
+	return item.image.medium || item.image.original || null;
+}
+
+function stripHtml(value) {
+	return typeof value === "string" ? value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "";
+}
+
+function getMetadataErrorStatus(error) {
+	if (/must be|required|at least/.test(error.message || "")) {
+		return 400;
+	}
+
+	if (/could not find/.test(error.message || "")) {
+		return 404;
+	}
+
+	if (/rate limit/.test(error.message || "")) {
+		return 429;
+	}
+
+	return 502;
+}
+
 function normalizeOptionalIntroOutro(assetSrc) {
 	if (!assetSrc) {
 		return null;
@@ -258,6 +448,7 @@ async function saveCutlistForVideo(videoSrc, options) {
 		`${JSON.stringify({
 			videoSrc,
 			cutList: options.cutList,
+			episodeIdentity: options.episodeIdentity || null,
 			introSrc: options.introSrc,
 			outroSrc: options.outroSrc,
 			updatedAt: new Date().toISOString(),

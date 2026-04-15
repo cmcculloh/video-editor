@@ -81,8 +81,53 @@ function getCutListConfigForVideo(videoFile) {
 
 	return {
 		cutList: normalizeCutList(cutList),
+		episodeIdentity: normalizeEpisodeIdentity(cutListData.episodeIdentity),
 		introSrc: cutListData.introSrc || null,
 		outroSrc: cutListData.outroSrc || null,
+	};
+}
+
+function normalizeEpisodeIdentity(identity) {
+	if (!identity) {
+		return null;
+	}
+
+	if (typeof identity !== "object" || Array.isArray(identity)) {
+		throw new Error("Episode identity must be an object.");
+	}
+
+	const provider = normalizeRequiredText(identity.provider, "Episode provider", 40).toLowerCase();
+
+	if (provider !== "tvmaze") {
+		throw new Error(`Unsupported episode identity provider: ${identity.provider}`);
+	}
+
+	const showId = normalizePositiveInteger(identity.showId || identity.providerShowId, "TVmaze show ID");
+	const episodeId = normalizePositiveInteger(identity.episodeId || identity.providerEpisodeId, "TVmaze episode ID");
+	const showName = normalizeRequiredText(identity.showName, "Show name", 180);
+	const episodeTitle = normalizeOptionalText(identity.episodeTitle || identity.title, 220);
+	const season = normalizeNullableInteger(identity.season, "Season number");
+	const number = normalizeNullableInteger(identity.number, "Episode number");
+	const airdate = normalizeOptionalDate(identity.airdate);
+	const url = normalizeOptionalHttpUrl(identity.url);
+	const showUrl = normalizeOptionalHttpUrl(identity.showUrl);
+	const externals = normalizeEpisodeExternals(identity.externals);
+	const selectedAt = normalizeOptionalIsoDateTime(identity.selectedAt) || new Date().toISOString();
+
+	return {
+		provider,
+		canonicalId: `${provider}:episode:${episodeId}`,
+		showId,
+		episodeId,
+		showName,
+		episodeTitle,
+		season,
+		number,
+		airdate,
+		url,
+		showUrl,
+		externals,
+		selectedAt,
 	};
 }
 
@@ -147,6 +192,124 @@ function normalizeCutColor(color, index) {
 	return trimmed.toLowerCase();
 }
 
+function normalizeEpisodeExternals(externals) {
+	if (!externals || typeof externals !== "object" || Array.isArray(externals)) {
+		return {};
+	}
+
+	const normalized = {};
+	const imdb = normalizeOptionalText(externals.imdb, 24);
+	const thetvdb = normalizeNullableInteger(externals.thetvdb, "TheTVDB ID");
+	const tvrage = normalizeNullableInteger(externals.tvrage, "TVRage ID");
+
+	if (imdb) {
+		normalized.imdb = imdb;
+	}
+
+	if (thetvdb !== null) {
+		normalized.thetvdb = thetvdb;
+	}
+
+	if (tvrage !== null) {
+		normalized.tvrage = tvrage;
+	}
+
+	return normalized;
+}
+
+function normalizeRequiredText(value, label, maxLength) {
+	const normalized = normalizeOptionalText(value, maxLength);
+
+	if (!normalized) {
+		throw new Error(`${label} is required.`);
+	}
+
+	return normalized;
+}
+
+function normalizeOptionalText(value, maxLength) {
+	if (value === null || value === undefined) {
+		return null;
+	}
+
+	if (typeof value !== "string" && typeof value !== "number") {
+		return null;
+	}
+
+	const normalized = String(value).trim().replace(/\s+/g, " ");
+
+	if (!normalized) {
+		return null;
+	}
+
+	return normalized.slice(0, maxLength);
+}
+
+function normalizePositiveInteger(value, label) {
+	const normalized = normalizeNullableInteger(value, label);
+
+	if (normalized === null || normalized <= 0) {
+		throw new Error(`${label} must be a positive integer.`);
+	}
+
+	return normalized;
+}
+
+function normalizeNullableInteger(value, label) {
+	if (value === null || value === undefined || value === "") {
+		return null;
+	}
+
+	const normalized = Number(value);
+
+	if (!Number.isInteger(normalized)) {
+		throw new Error(`${label} must be an integer.`);
+	}
+
+	return normalized;
+}
+
+function normalizeOptionalDate(value) {
+	const normalized = normalizeOptionalText(value, 10);
+
+	if (!normalized) {
+		return null;
+	}
+
+	return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null;
+}
+
+function normalizeOptionalIsoDateTime(value) {
+	const normalized = normalizeOptionalText(value, 40);
+
+	if (!normalized) {
+		return null;
+	}
+
+	const date = new Date(normalized);
+
+	if (Number.isNaN(date.getTime())) {
+		return null;
+	}
+
+	return date.toISOString();
+}
+
+function normalizeOptionalHttpUrl(value) {
+	const normalized = normalizeOptionalText(value, 400);
+
+	if (!normalized) {
+		return null;
+	}
+
+	try {
+		const url = new URL(normalized);
+		return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+	} catch (error) {
+		return null;
+	}
+}
+
 module.exports = {
 	CUT_MODE_REMOVE,
 	CUT_MODE_REPLACE,
@@ -158,5 +321,6 @@ module.exports = {
 	getCutListPath,
 	introsAndOutrosDir,
 	normalizeCutList,
+	normalizeEpisodeIdentity,
 	normalizeVideoPath,
 };

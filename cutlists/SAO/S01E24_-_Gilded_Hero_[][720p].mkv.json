@@ -3,54 +3,85 @@
   "cutList": [
     {
       "start": "559.433875",
-      "end": "582.872123"
+      "end": "582.872123",
+      "mode": "remove"
     },
     {
       "start": "582.832250",
-      "end": "591.144091"
+      "end": "591.144091",
+      "mode": "remove"
     },
     {
       "start": "591.048792",
-      "end": "605.229625"
+      "end": "605.229625",
+      "mode": "remove"
     },
     {
       "start": "620.411457",
-      "end": "624.807417"
+      "end": "624.807417",
+      "mode": "remove"
     },
     {
       "start": "633.939864",
-      "end": "634.648487"
+      "end": "634.648487",
+      "mode": "remove"
     },
     {
       "start": "634.620037",
-      "end": "669.956596"
+      "end": "669.956596",
+      "mode": "remove"
     },
     {
       "start": "734.692292",
-      "end": "739.079930"
+      "end": "739.079930",
+      "mode": "remove"
     },
     {
       "start": "746.412333",
-      "end": "747.246500"
+      "end": "747.246500",
+      "mode": "remove"
     },
     {
       "start": "765.848417",
-      "end": "769.268500"
+      "end": "769.268500",
+      "mode": "remove"
     },
     {
       "start": "818.234083",
-      "end": "822.784928"
+      "end": "822.784928",
+      "mode": "remove"
     },
     {
       "start": "981.939292",
-      "end": "982.731750"
+      "end": "982.731750",
+      "mode": "remove"
     },
     {
       "start": "1062.569700",
-      "end": "1065.490438"
+      "end": "1065.490438",
+      "mode": "remove"
     }
   ],
+  "episodeIdentity": {
+    "provider": "tvmaze",
+    "canonicalId": "tvmaze:episode:163558",
+    "showId": 2059,
+    "episodeId": 163558,
+    "showName": "Sword Art Online",
+    "episodeTitle": "Gilded Hero",
+    "season": 1,
+    "number": 24,
+    "airdate": "2012-12-15",
+    "url": "https://www.tvmaze.com/episodes/163558/sword-art-online-1x24-gilded-hero",
+    "showUrl": "https://www.tvmaze.com/shows/2059/sword-art-online",
+    "externals": {
+      "imdb": "tt2250192",
+      "thetvdb": 259640,
+      "tvrage": 32135
+    },
+    "selectedAt": "2026-04-15T16:51:32.593Z"
+  },
   "introSrc": null,
   "outroSrc": null,
-  "updatedAt": "2026-04-15T16:16:24.069Z"
+  "updatedAt": "2026-04-15T16:51:42.473Z"
 }
