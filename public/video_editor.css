@@ -130,7 +130,7 @@ video {
 	box-shadow: var(--shadow);
 	display: grid;
 	gap: 14px;
-	grid-template-columns: minmax(320px, 1.6fr) minmax(180px, 0.7fr) minmax(180px, 0.7fr);
+	grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) minmax(180px, 0.7fr) minmax(180px, 0.7fr);
 	padding: 16px;
 }
 
@@ -164,6 +164,11 @@ video {
 	min-height: 40px;
 	padding: 0 10px;
 	width: 100%;
+}
+
+.field input[type="file"] {
+	align-content: center;
+	padding: 8px 10px;
 }
 
 .field--compact {

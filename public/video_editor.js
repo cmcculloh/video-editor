@@ -1,7 +1,8 @@
 const urlParams = new URLSearchParams(window.location.search);
-const videoSrc = urlParams.get("src");
+let videoSrc = urlParams.get("src");
 const videoElement = document.getElementById("video");
 const videoSelect = document.getElementById("video-select");
+const localVideoInput = document.getElementById("local-video-input");
 const introSelect = document.getElementById("intro-select");
 const outroSelect = document.getElementById("outro-select");
 const introSelected = document.getElementById("intro-selected");
@@ -80,6 +81,11 @@ const segmentProgressBar = document.getElementById("segment-progress-bar");
 const segmentProgressLabel = document.getElementById("segment-progress-label");
 const segmentProgressPercent = document.getElementById("segment-progress-percent");
 const segmentProgressEta = document.getElementById("segment-progress-eta");
+const currentTimeElement = document.getElementById("currentTime");
+const currentSecondsElement = document.getElementById("currentSeconds");
+const currentFrameElement = document.getElementById("currentFrame");
+const currentFrameTimeElement = document.getElementById("currentFrameTime");
+const currentFpsElement = document.getElementById("currentFps");
 const SEEK_SECONDS = 10;
 const MAX_TIMELINE_THUMBNAILS = 36;
 const MIN_TIMELINE_THUMBNAILS = 10;
@@ -95,6 +101,12 @@ const TIMELINE_THUMBNAIL_REFRESH_DELAY = 180;
 const CUT_MODE_REMOVE = "remove";
 const CUT_MODE_REPLACE = "replace";
 const DEFAULT_REPLACEMENT_COLOR = "#000000";
+const LOCAL_CUTLIST_STORAGE_PREFIX = "cutlist-studio:local:";
+const DEFAULT_LOCAL_FRAME_RATE = 30;
+const CLIENT_EXPORT_OUTPUT_EXTENSION = "mp4";
+const FFMPEG_CORE_VERSION = "0.12.10";
+const FFMPEG_MODULE_URL = "./vendor/ffmpeg/index.js";
+const FFMPEG_CORE_BASE_URL = `https://unpkg.com/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/esm`;
 const CUT_REASON_CATEGORIES = [
 	{
 		id: "language",
@@ -188,11 +200,20 @@ let videoColorPickActive = false;
 let episodeIdentity = null;
 let showSearchResults = [];
 let currentShowEpisodes = [];
+let currentVideoSource = videoSrc ? createServerVideoSource(videoSrc) : null;
+let currentVideoObjectUrl = null;
+let finalVideoObjectUrl = null;
+let editorEventListenersInitialized = false;
+let activeFrameRateFraction = DEFAULT_LOCAL_FRAME_RATE;
+let activeFrameRate = DEFAULT_LOCAL_FRAME_RATE;
+let cutInProgress = null;
+let ffmpegToolsPromise = null;
+let clientExportProgress = null;
 
-document.body.classList.toggle("has-video", Boolean(videoSrc));
-selectedVideoLabel.textContent = videoSrc ? getFileName(videoSrc) : "No video loaded";
+document.body.classList.toggle("has-video", hasCurrentVideo());
+selectedVideoLabel.textContent = getCurrentVideoLabel();
 episodeSearchInput.value = guessShowSearchQuery(videoSrc);
-setActionControlsEnabled(Boolean(videoSrc));
+setActionControlsEnabled(hasCurrentVideo());
 setTransportControlsEnabled(false);
 updatePlaybackRateDisplay();
 updatePreviewSkipState();
@@ -200,23 +221,198 @@ updateEpisodeMatchDisplay();
 populateCutReasonCategorySelect();
 populateCutReasonSubcategorySelect("");
 
-populateVideoSelect();
+const videoListReady = populateVideoSelect();
 const introOutroAssetsReady = populateIntroOutroSelects();
 
-const setupVideo = async () => {
-	const frameRateFraction = await getFrameRate(videoSrc);
+videoListReady.then((videos) => {
+	if (!currentVideoSource) {
+		return;
+	}
+
+	if (currentVideoSource.type !== "server") {
+		return;
+	}
+
+	if (!videos.includes(currentVideoSource.videoSrc)) {
+		handleMissingSelectedVideo(currentVideoSource.videoSrc);
+		return;
+	}
+
+	introOutroAssetsReady.then(() => loadCutlist(currentVideoSource.videoSrc));
+	loadExistingFinalEdit(currentVideoSource.videoSrc);
+	loadCurrentVideoSource();
+});
+
+function createServerVideoSource(src) {
+	return {
+		type: "server",
+		videoSrc: src,
+		playbackSrc: src,
+		file: null,
+		displayName: getFileName(src),
+		fileName: getPathFileName(src),
+		identity: {
+			type: "server",
+			path: src,
+		},
+	};
+}
+
+function createLocalVideoSource(file, playbackSrc) {
+	return {
+		type: "local",
+		videoSrc: file.name,
+		playbackSrc,
+		file,
+		displayName: getFileName(file.name),
+		fileName: file.name,
+		identity: createLocalVideoIdentity(file),
+	};
+}
+
+function createLocalVideoIdentity(file) {
+	return {
+		type: "local-file",
+		name: file.name,
+		size: file.size,
+		lastModified: file.lastModified,
+		mediaType: file.type || "",
+	};
+}
+
+function hasCurrentVideo() {
+	return Boolean(currentVideoSource);
+}
+
+function getCurrentVideoLabel() {
+	if (!currentVideoSource) {
+		return "No video loaded";
+	}
+
+	return currentVideoSource.type === "local"
+		? `${currentVideoSource.displayName} - local file`
+		: currentVideoSource.displayName;
+}
+
+function getCurrentPlaybackSrc() {
+	if (videoElement.currentSrc) {
+		return videoElement.currentSrc;
+	}
+
+	return currentVideoSource ? currentVideoSource.playbackSrc : "";
+}
+
+function loadCurrentVideoSource() {
+	if (!currentVideoSource) {
+		resetVideoElement();
+		return;
+	}
+
+	const sourceElement = videoElement.getElementsByTagName("source")[0];
+
+	document.body.classList.add("has-video");
+	selectedVideoLabel.textContent = getCurrentVideoLabel();
+	setActionControlsEnabled(true);
+	setTransportControlsEnabled(false);
+	hideFinalVideo();
+	timelineStatusElement.textContent = "Loading video metadata...";
+	sourceElement.src = currentVideoSource.playbackSrc;
+	videoElement.removeAttribute("src");
+	videoElement.addEventListener("loadedmetadata", setupCurrentVideo, { once: true });
+	videoElement.load();
+}
+
+async function setupCurrentVideo() {
+	const frameRateFraction = await getCurrentFrameRate();
 	console.log("frame rate:", frameRateFraction);
 	setupEventListeners(videoElement, frameRateFraction);
-};
+}
 
-if (videoSrc) {
-	introOutroAssetsReady.then(() => loadCutlist(videoSrc));
-	loadExistingFinalEdit(videoSrc);
+async function getCurrentFrameRate() {
+	if (!currentVideoSource) {
+		return DEFAULT_LOCAL_FRAME_RATE;
+	}
+
+	if (currentVideoSource.type === "server") {
+		return getFrameRate(currentVideoSource.videoSrc);
+	}
+
+	return DEFAULT_LOCAL_FRAME_RATE;
+}
+
+function resetVideoElement() {
 	const sourceElement = videoElement.getElementsByTagName("source")[0];
-	console.log("setting source to: ", videoSrc);
-	sourceElement.src = videoSrc;
-	videoElement.addEventListener("loadedmetadata", setupVideo); // Run setupVideo when metadata is loaded
-	videoElement.load(); // Important: Load the video again after setting the source
+
+	document.body.classList.remove("has-video");
+	selectedVideoLabel.textContent = "No video loaded";
+	setActionControlsEnabled(false);
+	setTransportControlsEnabled(false);
+	sourceElement.removeAttribute("src");
+	videoElement.removeAttribute("src");
+	videoElement.load();
+}
+
+function selectLocalVideoFile(file) {
+	releaseCurrentLocalObjectUrl();
+	currentVideoObjectUrl = URL.createObjectURL(file);
+	currentVideoSource = createLocalVideoSource(file, currentVideoObjectUrl);
+	videoSrc = file.name;
+	videoSelect.value = "";
+
+	const nextUrl = new URL(window.location.href);
+	nextUrl.searchParams.delete("src");
+	window.history.replaceState({}, "", nextUrl.toString());
+
+	resetEditorForNewVideo();
+	loadLocalCutlistForCurrentVideo();
+	loadCurrentVideoSource();
+	statusElement.textContent = [
+		`Loaded local file: ${file.name}`,
+		"The source video stays in this browser. Save downloads a cutlist JSON; Edit Video renders locally with WebAssembly.",
+		"Local frame stepping uses 30 fps until browser-side frame-rate probing is added.",
+	].join("\n");
+	showToast("Local video loaded", "No upload needed.");
+}
+
+function releaseCurrentLocalObjectUrl() {
+	if (currentVideoObjectUrl) {
+		URL.revokeObjectURL(currentVideoObjectUrl);
+		currentVideoObjectUrl = null;
+	}
+}
+
+function resetEditorForNewVideo() {
+	cutStart = null;
+	cutInProgress = null;
+	cutList = [];
+	selectedCutIndex = null;
+	selectedCutPoint = null;
+	activeCutPointDrag = null;
+	lastSkippedCutEnd = null;
+	episodeIdentity = null;
+	showSearchResults = [];
+	currentShowEpisodes = [];
+	timelineDuration = 0;
+	timelineViewStart = 0;
+	timelineViewEnd = 0;
+	timelineThumbnailRun += 1;
+	window.clearTimeout(timelineThumbnailRefreshTimer);
+	timelineThumbnailRefreshTimer = null;
+	timelineThumbnailsElement.replaceChildren();
+	timelineStatusElement.textContent = "Loading video metadata...";
+	timelineDurationElement.textContent = "00:00:00";
+	timelineStartElement.textContent = "00:00:00";
+	timelineEndElement.textContent = "00:00:00";
+	timelineWindowElement.textContent = "Full timeline";
+	toggleCutButton.textContent = "Cut Start";
+	episodeSearchInput.value = guessShowSearchQuery(videoSrc);
+	stopVideoColorPick();
+	stopPreviewSkipLoop();
+	hideEditProgress();
+	hideFinalVideo();
+	updateCutlistDisplay();
+	updateEpisodeMatchDisplay();
+	updatePreviewSkipState();
 }
 
 
@@ -225,6 +421,10 @@ async function populateVideoSelect() {
 		const response = await fetch("/videos");
 		const data = await response.json();
 
+		if (!response.ok) {
+			throw new Error(data.error || "Failed to load video list.");
+		}
+
 		data.videos.forEach((video) => {
 			const option = document.createElement("option");
 			option.value = video;
@@ -232,9 +432,28 @@ async function populateVideoSelect() {
 			option.selected = video === videoSrc;
 			videoSelect.appendChild(option);
 		});
+
+		return data.videos;
 	} catch (error) {
 		console.error("Error loading video list:", error);
+		return [];
 	}
+}
+
+function handleMissingSelectedVideo(missingVideoSrc) {
+	const sourceElement = videoElement.getElementsByTagName("source")[0];
+
+	currentVideoSource = null;
+	videoSrc = null;
+	document.body.classList.remove("has-video");
+	selectedVideoLabel.textContent = "Missing video";
+	statusElement.textContent = `${missingVideoSrc} is not in public/. Add the source video back or choose another video.`;
+	timelineStatusElement.textContent = "Choose an available video to build the thumbnail strip.";
+	setActionControlsEnabled(false);
+	setTransportControlsEnabled(false);
+	sourceElement.removeAttribute("src");
+	videoElement.removeAttribute("src");
+	videoElement.load();
 }
 
 async function populateIntroOutroSelects() {
@@ -319,6 +538,42 @@ async function loadCutlist(selectedVideoSrc) {
 	}
 }
 
+function loadLocalCutlistForCurrentVideo() {
+	if (!currentVideoSource || currentVideoSource.type !== "local") {
+		return;
+	}
+
+	const storageKey = getLocalCutlistStorageKey();
+	const savedCutlist = storageKey ? window.localStorage.getItem(storageKey) : null;
+
+	if (!savedCutlist) {
+		cutList = [];
+		episodeIdentity = null;
+		updateCutlistDisplay();
+		updateEpisodeMatchDisplay();
+		return;
+	}
+
+	try {
+		const data = JSON.parse(savedCutlist);
+
+		cutList = Array.isArray(data.cutList) ? data.cutList : [];
+		episodeIdentity = data.episodeIdentity || null;
+		if (episodeIdentity && episodeIdentity.showName) {
+			episodeSearchInput.value = episodeIdentity.showName;
+		}
+		introSelect.value = data.introSrc || "";
+		outroSelect.value = data.outroSrc || "";
+		updateCutlistDisplay();
+		updateEpisodeMatchDisplay();
+		updateIntroOutroPreviews();
+		statusElement.textContent = `Loaded browser-saved cutlist for ${currentVideoSource.fileName}.`;
+	} catch (error) {
+		console.error("Error loading local cutlist:", error);
+		statusElement.textContent = "The browser-saved cutlist for this file could not be read.";
+	}
+}
+
 async function loadExistingFinalEdit(selectedVideoSrc) {
 	try {
 		const response = await fetch(`/existing-edit?videoSrc=${encodeURIComponent(selectedVideoSrc)}`);
@@ -341,9 +596,27 @@ videoSelect.addEventListener("change", () => {
 		return;
 	}
 
+	releaseCurrentLocalObjectUrl();
 	const nextUrl = new URL(window.location.href);
 	nextUrl.searchParams.set("src", videoSelect.value);
 	window.location.href = nextUrl.toString();
+});
+
+localVideoInput.addEventListener("change", () => {
+	const file = localVideoInput.files && localVideoInput.files[0];
+
+	if (!file) {
+		return;
+	}
+
+	selectLocalVideoFile(file);
+});
+
+window.addEventListener("beforeunload", () => {
+	releaseCurrentLocalObjectUrl();
+	if (finalVideoObjectUrl) {
+		URL.revokeObjectURL(finalVideoObjectUrl);
+	}
 });
 
 introSelect.addEventListener("change", updateIntroOutroPreviews);
@@ -714,85 +987,30 @@ async function getFrameRate(videoSrc) {
 
 function setupEventListeners(videoElement, frameRateFraction) {
 	console.log("setupEventListeners frameRateFraction: ", frameRateFraction);
-	const frameRate = parseFrameRate(frameRateFraction);
-	document.addEventListener("keydown", (event) => {
-		if (event.target.closest("input, textarea, select, .timeline__cut-handle")) {
-			return;
-		}
+	activeFrameRateFraction = frameRateFraction || DEFAULT_LOCAL_FRAME_RATE;
+	activeFrameRate = parseFrameRate(activeFrameRateFraction);
 
-		const key = event.key;
+	if (!editorEventListenersInitialized) {
+		document.addEventListener("keydown", handleEditorKeydown);
+		seekBackwardButton.addEventListener("click", () => {
+			console.log("back");
+			seekVideo(videoElement, activeFrameRateFraction, false);
+		});
+		seekForwardButton.addEventListener("click", () => {
+			console.log("forward");
+			seekVideo(videoElement, activeFrameRateFraction, true);
+		});
+		toggleCutButton.addEventListener("click", handleToggleCut);
+		videoElement.addEventListener("loadedmetadata", updateViewerReadout);
+		videoElement.addEventListener("seeked", updateViewerReadout);
+		videoElement.addEventListener("timeupdate", updateViewerReadout);
+		videoElement.addEventListener("play", startPreviewSkipLoop);
+		videoElement.addEventListener("playing", startPreviewSkipLoop);
+		videoElement.addEventListener("pause", stopPreviewSkipLoop);
+		videoElement.addEventListener("ended", stopPreviewSkipLoop);
+		editorEventListenersInitialized = true;
+	}
 
-		if (key === "ArrowRight") {
-			console.log("advance", frameRateFraction);
-			event.preventDefault();
-			event.stopPropagation();
-			advanceFrame(videoElement, frameRateFraction, true);
-		} else if (key === "ArrowLeft") {
-			event.preventDefault();
-			event.stopPropagation();
-			advanceFrame(videoElement, frameRateFraction, false);
-		}
-	});
-
-	const currentTimeElement = document.getElementById("currentTime");
-	const currentSecondsElement = document.getElementById("currentSeconds");
-	const currentFrameElement = document.getElementById("currentFrame");
-	const currentFrameTimeElement = document.getElementById("currentFrameTime");
-	const currentFpsElement = document.getElementById("currentFps");
-
-	let cutInProgress = null;
-	const updateViewerReadout = () => {
-		const frameNumber = getFrameNumber(videoElement.currentTime, frameRate);
-		const frameTime = getFrameTime(frameNumber, frameRate);
-
-		currentTimeElement.textContent = formatTime(videoElement.currentTime);
-		currentSecondsElement.textContent = videoElement.currentTime.toFixed(6);
-		currentFrameElement.textContent = String(frameNumber);
-		currentFrameTimeElement.textContent = formatTime(frameTime, 6);
-		currentFpsElement.textContent = Number.isFinite(frameRate)
-			? `${frameRate.toFixed(6)} (${frameRateFraction})`
-			: String(frameRateFraction || "Unknown");
-		updateTimelinePlayhead();
-	};
-
-	seekBackwardButton.addEventListener("click", () => {
-		console.log("back");
-		seekVideo(videoElement, frameRateFraction, false);
-	});
-
-	seekForwardButton.addEventListener("click", () => {
-		console.log("forward");
-		seekVideo(videoElement, frameRateFraction, true);
-	});
-
-	toggleCutButton.addEventListener("click", () => {
-		let nextSelectedCutIndex = null;
-
-		if (cutInProgress) {
-			cutInProgress.end = getFrameTime(getFrameNumber(videoElement.currentTime, frameRate), frameRate).toFixed(6);
-			cutInProgress.mode = CUT_MODE_REMOVE;
-			nextSelectedCutIndex = cutList.push(cutInProgress) - 1;
-			cutInProgress = null;
-			toggleCutButton.textContent = "Cut Start";
-		} else {
-			cutInProgress = {
-				start: getFrameTime(getFrameNumber(videoElement.currentTime, frameRate), frameRate).toFixed(6),
-			};
-			toggleCutButton.textContent = "Cut End";
-		}
-		updateCutlistDisplay();
-
-		if (nextSelectedCutIndex !== null) {
-			selectCut(nextSelectedCutIndex, { seek: false });
-		}
-	});
-	videoElement.addEventListener("loadedmetadata", updateViewerReadout);
-	videoElement.addEventListener("seeked", updateViewerReadout);
-	videoElement.addEventListener("timeupdate", updateViewerReadout);
-	videoElement.addEventListener("play", startPreviewSkipLoop);
-	videoElement.addEventListener("playing", startPreviewSkipLoop);
-	videoElement.addEventListener("pause", stopPreviewSkipLoop);
-	videoElement.addEventListener("ended", stopPreviewSkipLoop);
 	setTransportControlsEnabled(true);
 	setupTimeline(videoElement).catch((error) => {
 		console.error("Error setting up timeline:", error);
@@ -800,6 +1018,61 @@ function setupEventListeners(videoElement, frameRateFraction) {
 		timelineElement.classList.remove("timeline--loading");
 	});
 	updateViewerReadout();
+}
+
+function handleEditorKeydown(event) {
+	if (event.target.closest("input, textarea, select, .timeline__cut-handle")) {
+		return;
+	}
+
+	const key = event.key;
+
+	if (key === "ArrowRight") {
+		console.log("advance", activeFrameRateFraction);
+		event.preventDefault();
+		event.stopPropagation();
+		advanceFrame(videoElement, activeFrameRateFraction, true);
+	} else if (key === "ArrowLeft") {
+		event.preventDefault();
+		event.stopPropagation();
+		advanceFrame(videoElement, activeFrameRateFraction, false);
+	}
+}
+
+function handleToggleCut() {
+	let nextSelectedCutIndex = null;
+
+	if (cutInProgress) {
+		cutInProgress.end = getFrameTime(getFrameNumber(videoElement.currentTime, activeFrameRate), activeFrameRate).toFixed(6);
+		cutInProgress.mode = CUT_MODE_REMOVE;
+		nextSelectedCutIndex = cutList.push(cutInProgress) - 1;
+		cutInProgress = null;
+		toggleCutButton.textContent = "Cut Start";
+	} else {
+		cutInProgress = {
+			start: getFrameTime(getFrameNumber(videoElement.currentTime, activeFrameRate), activeFrameRate).toFixed(6),
+		};
+		toggleCutButton.textContent = "Cut End";
+	}
+	updateCutlistDisplay();
+
+	if (nextSelectedCutIndex !== null) {
+		selectCut(nextSelectedCutIndex, { seek: false });
+	}
+}
+
+function updateViewerReadout() {
+	const frameNumber = getFrameNumber(videoElement.currentTime, activeFrameRate);
+	const frameTime = getFrameTime(frameNumber, activeFrameRate);
+
+	currentTimeElement.textContent = formatTime(videoElement.currentTime);
+	currentSecondsElement.textContent = videoElement.currentTime.toFixed(6);
+	currentFrameElement.textContent = String(frameNumber);
+	currentFrameTimeElement.textContent = formatTime(frameTime, 6);
+	currentFpsElement.textContent = Number.isFinite(activeFrameRate)
+		? `${activeFrameRate.toFixed(6)} (${activeFrameRateFraction})`
+		: String(activeFrameRateFraction || "Unknown");
+	updateTimelinePlayhead();
 }
 
 function updateCutlistDisplay() {
@@ -1091,7 +1364,7 @@ async function setupTimeline(videoElement) {
 		return;
 	}
 
-	await renderTimelineThumbnails(videoElement.currentSrc || videoSrc, timelineDuration);
+	await renderTimelineThumbnails(getCurrentPlaybackSrc(), timelineDuration);
 }
 
 function setTimelineView(start, end, options = {}) {
@@ -1124,7 +1397,7 @@ function setTimelineView(start, end, options = {}) {
 	updateTimelinePlayhead();
 
 	if (options.renderThumbnails !== false) {
-		renderTimelineThumbnails(videoElement.currentSrc || videoSrc, timelineDuration);
+		renderTimelineThumbnails(getCurrentPlaybackSrc(), timelineDuration);
 	}
 }
 
@@ -1191,7 +1464,7 @@ function scheduleTimelineThumbnailRefresh() {
 	window.clearTimeout(timelineThumbnailRefreshTimer);
 	timelineThumbnailRefreshTimer = window.setTimeout(() => {
 		timelineThumbnailRefreshTimer = null;
-		renderTimelineThumbnails(videoElement.currentSrc || videoSrc, timelineDuration);
+		renderTimelineThumbnails(getCurrentPlaybackSrc(), timelineDuration);
 	}, TIMELINE_THUMBNAIL_REFRESH_DELAY);
 }
 
@@ -1766,7 +2039,7 @@ function updateCutOptionsEditor() {
 	cutActionSelectElement.value = mode;
 	cutColorInputElement.value = color;
 	cutColorInputElement.disabled = !isReplaceMode;
-	cutColorPickVideoButton.disabled = !videoSrc;
+	cutColorPickVideoButton.disabled = !hasCurrentVideo();
 	cutColorSwatchElement.style.backgroundColor = color;
 	cutReasonCategorySelectElement.value = reason.category || "";
 	populateCutReasonSubcategorySelect(reason.category, reason.subcategory);
@@ -2456,7 +2729,7 @@ function showToast(title, message = "", type = "success") {
 }
 
 saveCutlistButton.addEventListener("click", async () => {
-	if (!videoSrc) {
+	if (!hasCurrentVideo()) {
 		showToast("Choose a video first", "Pick a source video before saving a cutlist.", "warning");
 		return;
 	}
@@ -2464,8 +2737,13 @@ saveCutlistButton.addEventListener("click", async () => {
 	try {
 		const data = await saveCutlist();
 
-		statusElement.textContent = `Cutlist saved to ${data.path}\n\nTerminal command:\n${data.editCommand}`;
-		showToast("Cutlist saved", "You can edit the video now.");
+		if (data.local) {
+			statusElement.textContent = `Cutlist saved in this browser and downloaded as ${data.downloadName}.\n\nThe video file was not uploaded.`;
+			showToast("Cutlist saved", data.downloadName);
+		} else {
+			statusElement.textContent = `Cutlist saved to ${data.path}\n\nEdit Video now renders locally in the browser. Legacy command:\n${data.editCommand}`;
+			showToast("Cutlist saved", "You can edit locally now.");
+		}
 	} catch (error) {
 		console.error("Error saving cutlist: ", error);
 		statusElement.textContent = error.message;
@@ -2473,22 +2751,20 @@ saveCutlistButton.addEventListener("click", async () => {
 	}
 });
 
-async function saveCutlist() {
+async function saveCutlist(options = {}) {
 	cutList = readCutlistFromEditor();
 	updateCutlistDisplay();
+
+	if (currentVideoSource && currentVideoSource.type === "local") {
+		return saveLocalCutlist(options);
+	}
 
 	const response = await fetch("/cutlists", {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
 		},
-		body: JSON.stringify({
-			videoSrc,
-			cutList,
-			episodeIdentity,
-			introSrc: introSelect.value,
-			outroSrc: outroSelect.value,
-		}),
+		body: JSON.stringify(buildCutlistPayload()),
 	});
 	const data = await response.json();
 
@@ -2497,6 +2773,84 @@ async function saveCutlist() {
 	}
 
 	return data;
+}
+
+function saveLocalCutlist(options = {}) {
+	const payload = buildCutlistPayload();
+	const storageKey = getLocalCutlistStorageKey();
+	const downloadName = getCutlistDownloadName();
+
+	if (storageKey) {
+		window.localStorage.setItem(storageKey, JSON.stringify(payload));
+	}
+
+	if (options.download !== false) {
+		downloadJson(payload, downloadName);
+	}
+
+	return {
+		local: true,
+		path: "browser local storage",
+		downloadName,
+		editCommand: "Use Edit Video for a browser-local export.",
+	};
+}
+
+function buildCutlistPayload() {
+	return {
+		videoSrc,
+		sourceType: currentVideoSource ? currentVideoSource.type : "unknown",
+		videoIdentity: currentVideoSource ? currentVideoSource.identity : null,
+		cutList,
+		episodeIdentity,
+		introSrc: introSelect.value,
+		outroSrc: outroSelect.value,
+		savedAt: new Date().toISOString(),
+	};
+}
+
+function getLocalCutlistStorageKey() {
+	if (!currentVideoSource || currentVideoSource.type !== "local") {
+		return "";
+	}
+
+	return `${LOCAL_CUTLIST_STORAGE_PREFIX}${btoa(unescape(encodeURIComponent(JSON.stringify(currentVideoSource.identity))))}`;
+}
+
+function getCutlistDownloadName() {
+	const baseName = currentVideoSource ? currentVideoSource.displayName : "cutlist";
+	return `${sanitizeFileName(baseName)}.cutlist.json`;
+}
+
+function getEditedVideoDownloadName() {
+	const baseName = currentVideoSource ? currentVideoSource.displayName : "edited-video";
+	return `${sanitizeFileName(baseName)}-edited.${CLIENT_EXPORT_OUTPUT_EXTENSION}`;
+}
+
+function downloadJson(data, fileName) {
+	const blob = new Blob([JSON.stringify(data, null, "\t")], { type: "application/json" });
+	downloadBlob(blob, fileName);
+}
+
+function downloadBlob(blob, fileName) {
+	const url = URL.createObjectURL(blob);
+	const link = document.createElement("a");
+
+	link.href = url;
+	link.download = fileName;
+	document.body.appendChild(link);
+	link.click();
+	link.remove();
+	window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function sanitizeFileName(value) {
+	const sanitized = String(value || "video")
+		.replace(/\.[^.]+$/, "")
+		.replace(/[^a-z0-9._-]+/gi, "-")
+		.replace(/^-+|-+$/g, "");
+
+	return sanitized || "video";
 }
 
 function updateEditProgress(progress) {
@@ -2539,81 +2893,322 @@ function resetSegmentProgress() {
 	segmentProgressEta.textContent = "";
 }
 
+function hideEditProgress() {
+	editProgressElement.hidden = true;
+	editProgressBar.value = 0;
+	editProgressLabel.textContent = "Preparing edit...";
+	editProgressPercent.textContent = "0%";
+	resetSegmentProgress();
+}
+
 function showFinalVideo(outputUrl) {
-	finalVideoElement.src = `${outputUrl}?t=${Date.now()}`;
+	if (finalVideoObjectUrl && finalVideoObjectUrl !== outputUrl) {
+		URL.revokeObjectURL(finalVideoObjectUrl);
+		finalVideoObjectUrl = null;
+	}
+
+	if (outputUrl.startsWith("blob:")) {
+		finalVideoObjectUrl = outputUrl;
+		finalVideoElement.src = outputUrl;
+	} else {
+		finalVideoElement.src = `${outputUrl}?t=${Date.now()}`;
+	}
+
 	finalVideoElement.hidden = false;
 	document.body.classList.add("has-final-video");
 	finalVideoElement.load();
 }
 
-async function waitForEditJob(jobId) {
-	while (true) {
-		const response = await fetch(`/edits/${encodeURIComponent(jobId)}`);
-		const data = await response.json();
+function hideFinalVideo() {
+	if (finalVideoObjectUrl) {
+		URL.revokeObjectURL(finalVideoObjectUrl);
+		finalVideoObjectUrl = null;
+	}
 
-		if (!response.ok) {
-			throw new Error(data.error || "Failed to check edit progress.");
+	finalVideoElement.hidden = true;
+	finalVideoElement.removeAttribute("src");
+	finalVideoElement.load();
+	document.body.classList.remove("has-final-video");
+}
+
+async function runClientSideEdit() {
+	const unsupportedReasons = getClientExportUnsupportedReasons();
+
+	if (unsupportedReasons.length) {
+		throw new Error(`Browser-local export is started, but this cutlist needs more exporter work:\n- ${unsupportedReasons.join("\n- ")}`);
+	}
+
+	const duration = getCurrentVideoDuration();
+	const keepRanges = getKeepRangesForExport(cutList, duration);
+
+	if (!keepRanges.length) {
+		throw new Error("Every part of the video is marked for removal. Leave at least one range in the final edit.");
+	}
+
+	updateEditProgress({ percent: 8, message: "Loading local video engine..." });
+	const { ffmpeg, fetchFile } = await loadFfmpegTools();
+	const exportId = `export-${Date.now().toString(36)}`;
+	const inputName = `${exportId}${getInputFileExtension()}`;
+	const outputName = `${exportId}-edited.${CLIENT_EXPORT_OUTPUT_EXTENSION}`;
+	const segmentNames = [];
+
+	try {
+		updateEditProgress({ percent: 16, message: "Reading source video locally..." });
+		await ffmpeg.writeFile(inputName, await fetchFile(getFfmpegInputSource()));
+
+		if (shouldCopyWholeVideo(keepRanges, duration)) {
+			clientExportProgress = { start: 18, end: 88, message: "Copying video locally..." };
+			await ffmpeg.exec(["-i", inputName, "-map", "0:v:0", "-map", "0:a?", "-c", "copy", outputName]);
+		} else {
+			for (let index = 0; index < keepRanges.length; index += 1) {
+				const range = keepRanges[index];
+				const segmentName = `${exportId}-segment-${String(index).padStart(3, "0")}.mp4`;
+				const segmentStartPercent = 18 + (index / keepRanges.length) * 56;
+				const segmentEndPercent = 18 + ((index + 1) / keepRanges.length) * 56;
+
+				segmentNames.push(segmentName);
+				clientExportProgress = {
+					start: segmentStartPercent,
+					end: segmentEndPercent,
+					message: `Creating segment ${index + 1}/${keepRanges.length}...`,
+				};
+				updateSegmentProgress({
+					percent: (index / keepRanges.length) * 100,
+					message: `Segment ${index + 1}/${keepRanges.length}`,
+				});
+				await ffmpeg.exec([
+					"-i",
+					inputName,
+					"-ss",
+					formatFfmpegSeconds(range.start),
+					"-t",
+					formatFfmpegSeconds(range.end - range.start),
+					"-map",
+					"0:v:0",
+					"-map",
+					"0:a?",
+					"-c",
+					"copy",
+					"-avoid_negative_ts",
+					"make_zero",
+					segmentName,
+				]);
+			}
+
+			updateSegmentProgress({ percent: 100, message: "Segments ready" });
+			updateEditProgress({ percent: 78, message: "Joining segments locally..." });
+			await ffmpeg.writeFile(`${exportId}-segments.txt`, new TextEncoder().encode(createConcatList(segmentNames)));
+			clientExportProgress = { start: 78, end: 92, message: "Joining segments locally..." };
+			await ffmpeg.exec([
+				"-f",
+				"concat",
+				"-safe",
+				"0",
+				"-i",
+				`${exportId}-segments.txt`,
+				"-c",
+				"copy",
+				outputName,
+			]);
 		}
 
-		updateEditProgress(data.progress || { percent: 0, message: "Editing video..." });
+		clientExportProgress = null;
+		updateEditProgress({ percent: 94, message: "Preparing download..." });
+		const outputData = await ffmpeg.readFile(outputName);
+		const blob = new Blob([outputData], { type: "video/mp4" });
+		const outputUrl = URL.createObjectURL(blob);
+		const fileName = getEditedVideoDownloadName();
 
-		if (data.status === "complete") {
-			return data;
-		}
-
-		if (data.status === "failed") {
-			throw new Error([data.error, data.stderr, data.stdout].filter(Boolean).join("\n\n") || "Failed to edit video.");
-		}
-
-		await new Promise((resolve) => setTimeout(resolve, 1000));
+		return { blob, outputUrl, fileName };
+	} finally {
+		clientExportProgress = null;
+		await cleanupFfmpegFiles(ffmpeg, [
+			inputName,
+			outputName,
+			`${exportId}-segments.txt`,
+			...segmentNames,
+		]);
 	}
 }
 
+function getClientExportUnsupportedReasons() {
+	const reasons = [];
+	const normalizedCuts = normalizeCutRanges(cutList, getCurrentVideoDuration());
+	const replacementCutCount = normalizedCuts.filter((cut) => cut.mode === CUT_MODE_REPLACE).length;
+
+	if (replacementCutCount) {
+		reasons.push(`${replacementCutCount} color replacement ${replacementCutCount === 1 ? "cut is" : "cuts are"} present`);
+	}
+
+	if (introSelect.value || outroSelect.value) {
+		reasons.push("intro/outro concatenation is selected");
+	}
+
+	if (debugBlackCutsInput.checked) {
+		reasons.push("debug black removals are enabled");
+	}
+
+	return reasons;
+}
+
+async function loadFfmpegTools() {
+	if (!ffmpegToolsPromise) {
+		ffmpegToolsPromise = (async () => {
+			const { FFmpeg } = await import(FFMPEG_MODULE_URL);
+			const ffmpeg = new FFmpeg();
+
+			ffmpeg.on("log", ({ message }) => {
+				if (message) {
+					console.debug("[ffmpeg]", message);
+				}
+			});
+			ffmpeg.on("progress", ({ progress }) => {
+				if (!clientExportProgress) {
+					return;
+				}
+
+				const safeProgress = clamp(Number(progress) || 0, 0, 1);
+				const percent = clientExportProgress.start + (clientExportProgress.end - clientExportProgress.start) * safeProgress;
+				updateEditProgress({
+					percent,
+					message: clientExportProgress.message,
+				});
+			});
+
+			await ffmpeg.load({
+				coreURL: await toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript"),
+				wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm"),
+			});
+
+			return { ffmpeg, fetchFile };
+		})().catch((error) => {
+			ffmpegToolsPromise = null;
+			throw error;
+		});
+	}
+
+	return ffmpegToolsPromise;
+}
+
+async function toBlobURL(url, mimeType) {
+	const response = await fetch(url);
+
+	if (!response.ok) {
+		throw new Error(`Could not load ${url}: ${response.status}`);
+	}
+
+	const blob = await response.blob();
+	return URL.createObjectURL(new Blob([blob], { type: mimeType }));
+}
+
+async function fetchFile(input) {
+	if (input instanceof Blob) {
+		return new Uint8Array(await input.arrayBuffer());
+	}
+
+	const response = await fetch(input);
+
+	if (!response.ok) {
+		throw new Error(`Could not read source video: ${response.status}`);
+	}
+
+	return new Uint8Array(await response.arrayBuffer());
+}
+
+function getFfmpegInputSource() {
+	if (!currentVideoSource) {
+		throw new Error("Choose a video first.");
+	}
+
+	return currentVideoSource.file || currentVideoSource.playbackSrc;
+}
+
+function getInputFileExtension() {
+	const match = currentVideoSource && currentVideoSource.fileName.match(/(\.[a-z0-9]+)$/i);
+	return match ? match[1].toLowerCase() : ".mp4";
+}
+
+function getCurrentVideoDuration() {
+	const duration = timelineDuration || videoElement.duration;
+
+	if (!Number.isFinite(duration) || duration <= 0) {
+		throw new Error("Video duration is unavailable. Wait for the source video to finish loading.");
+	}
+
+	return duration;
+}
+
+function getKeepRangesForExport(cuts, duration) {
+	const removeRanges = mergeCutRanges(
+		normalizeCutRanges(cuts, duration)
+			.filter((cut) => cut.mode === CUT_MODE_REMOVE)
+			.map((cut) => ({
+				start: cut.start,
+				end: cut.end,
+			}))
+			.sort((a, b) => a.start - b.start)
+	);
+	const keepRanges = [];
+	let cursor = 0;
+
+	removeRanges.forEach((range) => {
+		if (range.start > cursor + CUT_POINT_MIN_GAP) {
+			keepRanges.push({ start: cursor, end: range.start });
+		}
+
+		cursor = Math.max(cursor, range.end);
+	});
+
+	if (cursor < duration - CUT_POINT_MIN_GAP) {
+		keepRanges.push({ start: cursor, end: duration });
+	}
+
+	return keepRanges.filter((range) => range.end - range.start > CUT_POINT_MIN_GAP);
+}
+
+function shouldCopyWholeVideo(keepRanges, duration) {
+	return keepRanges.length === 1 && keepRanges[0].start <= CUT_POINT_MIN_GAP && keepRanges[0].end >= duration - CUT_POINT_MIN_GAP;
+}
+
+function formatFfmpegSeconds(value) {
+	return Math.max(0, Number(value) || 0).toFixed(6);
+}
+
+function createConcatList(segmentNames) {
+	return segmentNames.map((name) => `file '${name}'`).join("\n");
+}
+
+async function cleanupFfmpegFiles(ffmpeg, fileNames) {
+	await Promise.all(
+		fileNames.map(async (fileName) => {
+			try {
+				await ffmpeg.deleteFile(fileName);
+			} catch (error) {
+				// Best effort cleanup; missing temp files are harmless.
+			}
+		})
+	);
+}
+
 editVideoButton.addEventListener("click", async () => {
-	if (!videoSrc) {
+	if (!hasCurrentVideo()) {
 		showToast("Choose a video first", "Pick a source video before editing.", "warning");
 		return;
 	}
 
 	editVideoButton.disabled = true;
 	resetEditProgress();
-	statusElement.textContent = debugBlackCutsInput.checked
-		? "Creating debug edit with black screens where removed cuts occur. This may take a while..."
-		: "Editing video. This may take a while...";
+	statusElement.textContent = "Rendering locally in this browser. The source video is not uploaded.";
 
 	try {
-		const saved = await saveCutlist();
-		statusElement.textContent = debugBlackCutsInput.checked
-			? `Cutlist saved to ${saved.path}\n\nCreating debug edit with black screens where removed cuts occur. This may take a while...`
-			: `Cutlist saved to ${saved.path}\n\nEditing video. This may take a while...`;
-
-		updateEditProgress({ percent: 5, message: "Starting edit job..." });
-		const response = await fetch("/edits", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				videoSrc,
-				cutList,
-				episodeIdentity,
-				introSrc: introSelect.value,
-				outroSrc: outroSelect.value,
-				debugBlackCuts: debugBlackCutsInput.checked,
-			}),
-		});
-		const started = await response.json();
-
-		if (!response.ok) {
-			throw new Error([started.error, started.stderr, started.stdout].filter(Boolean).join("\n\n") || "Failed to edit video.");
-		}
-
-		const data = await waitForEditJob(started.jobId);
+		await saveCutlist({ download: false });
+		const data = await runClientSideEdit();
 		updateEditProgress({ percent: 100, message: "Edit complete." });
 		resetSegmentProgress();
-		statusElement.textContent = `Edit complete: ${data.output}\n\nCommand:\n${data.command}`;
+		statusElement.textContent = `Edit complete: ${data.fileName}\n\nRendered locally with FFmpeg WebAssembly.`;
 		showFinalVideo(data.outputUrl);
-		showToast("Edit complete", data.output);
+		downloadBlob(data.blob, data.fileName);
+		showToast("Edit complete", data.fileName);
 	} catch (error) {
 		console.error("Error editing video: ", error);
 		statusElement.textContent = error.message;
@@ -2662,4 +3257,8 @@ function updatePlaybackRateDisplay() {
 function getFileName(src) {
 	const fileName = decodeURIComponent(src.split("/").pop() || src);
 	return fileName.replace(/\.[^.]+$/, "");
+}
+
+function getPathFileName(src) {
+	return decodeURIComponent(String(src || "").split("/").pop() || src || "video.mp4");
 }

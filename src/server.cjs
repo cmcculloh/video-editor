@@ -255,7 +255,18 @@ app.listen(port, () => {
 });
 
 async function getVideoFiles(directory, baseDirectory = directory) {
-	const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+	let entries;
+
+	try {
+		entries = await fs.promises.readdir(directory, { withFileTypes: true });
+	} catch (error) {
+		if (error.code === "ENOENT") {
+			return [];
+		}
+
+		throw error;
+	}
+
 	const videos = await Promise.all(
 		entries.map(async (entry) => {
 			const entryPath = path.join(directory, entry.name);
