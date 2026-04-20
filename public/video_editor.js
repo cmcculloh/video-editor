@@ -31,11 +31,11 @@ const timelineStatusElement = document.getElementById("timeline-status");
 const timelineDurationElement = document.getElementById("timeline-duration");
 const timelineStartElement = document.getElementById("timeline-start");
 const timelineEndElement = document.getElementById("timeline-end");
-const timelineWindowElement = document.getElementById("timeline-window");
-const timelineZoomOutButton = document.getElementById("timeline-zoom-out");
-const timelineZoomInButton = document.getElementById("timeline-zoom-in");
-const timelineFitButton = document.getElementById("timeline-fit");
-const timelineCenterPlayheadButton = document.getElementById("timeline-center-playhead");
+const timelineRangeSlider = document.getElementById("timeline-range-slider");
+const timelineRangeTrack = document.getElementById("timeline-range-track");
+const timelineRangeWindow = document.getElementById("timeline-range-window");
+const timelineRangeStartHandle = document.getElementById("timeline-range-start");
+const timelineRangeEndHandle = document.getElementById("timeline-range-end");
 const cutPointEditorElement = document.getElementById("cut-point-editor");
 const cutPointLabelElement = document.getElementById("cut-point-label");
 const cutPointTimeElement = document.getElementById("cut-point-time");
@@ -70,8 +70,7 @@ const toastRegionElement = document.getElementById("toast-region");
 const seekBackwardButton = document.getElementById("seekBackward");
 const seekForwardButton = document.getElementById("seekForward");
 const toggleCutButton = document.getElementById("toggleCut");
-const speedUpButton = document.getElementById("speedUp");
-const slowDownButton = document.getElementById("slowDown");
+const playbackRateSlider = document.getElementById("playback-rate-slider");
 const editProgressElement = document.getElementById("edit-progress");
 const editProgressBar = document.getElementById("edit-progress-bar");
 const editProgressLabel = document.getElementById("edit-progress-label");
@@ -83,9 +82,6 @@ const segmentProgressPercent = document.getElementById("segment-progress-percent
 const segmentProgressEta = document.getElementById("segment-progress-eta");
 const currentTimeElement = document.getElementById("currentTime");
 const currentSecondsElement = document.getElementById("currentSeconds");
-const currentFrameElement = document.getElementById("currentFrame");
-const currentFrameTimeElement = document.getElementById("currentFrameTime");
-const currentFpsElement = document.getElementById("currentFps");
 const SEEK_SECONDS = 10;
 const MAX_TIMELINE_THUMBNAILS = 36;
 const MIN_TIMELINE_THUMBNAILS = 10;
@@ -94,9 +90,9 @@ const TIMELINE_THUMBNAIL_HEIGHT = 90;
 const CUT_POINT_MIN_GAP = 0.001;
 const PREVIEW_SKIP_EPSILON = 0.03;
 const MIN_TIMELINE_WINDOW_SECONDS = 2;
-const TIMELINE_ZOOM_FACTOR = 2;
 const TIMELINE_WHEEL_LINE_PIXELS = 18;
 const TIMELINE_WHEEL_PAGE_PIXELS = 240;
+const TIMELINE_WHEEL_ZOOM_INTENSITY = 0.0035;
 const TIMELINE_THUMBNAIL_REFRESH_DELAY = 180;
 const CUT_MODE_REMOVE = "remove";
 const CUT_MODE_REPLACE = "replace";
@@ -191,6 +187,7 @@ let timelineViewEnd = 0;
 let timelineThumbnailRun = 0;
 let timelineThumbnailRefreshTimer = null;
 let timelineScrubbing = false;
+let timelineRangeDrag = null;
 let selectedCutIndex = null;
 let selectedCutPoint = null;
 let activeCutPointDrag = null;
@@ -216,6 +213,7 @@ episodeSearchInput.value = guessShowSearchQuery(videoSrc);
 setActionControlsEnabled(hasCurrentVideo());
 setTransportControlsEnabled(false);
 updatePlaybackRateDisplay();
+updateCutToggleState(false);
 updatePreviewSkipState();
 updateEpisodeMatchDisplay();
 populateCutReasonCategorySelect();
@@ -403,8 +401,7 @@ function resetEditorForNewVideo() {
 	timelineDurationElement.textContent = "00:00:00";
 	timelineStartElement.textContent = "00:00:00";
 	timelineEndElement.textContent = "00:00:00";
-	timelineWindowElement.textContent = "Full timeline";
-	toggleCutButton.textContent = "Cut Start";
+	updateCutToggleState(false);
 	episodeSearchInput.value = guessShowSearchQuery(videoSrc);
 	stopVideoColorPick();
 	stopPreviewSkipLoop();
@@ -1047,12 +1044,12 @@ function handleToggleCut() {
 		cutInProgress.mode = CUT_MODE_REMOVE;
 		nextSelectedCutIndex = cutList.push(cutInProgress) - 1;
 		cutInProgress = null;
-		toggleCutButton.textContent = "Cut Start";
+		updateCutToggleState(false);
 	} else {
 		cutInProgress = {
 			start: getFrameTime(getFrameNumber(videoElement.currentTime, activeFrameRate), activeFrameRate).toFixed(6),
 		};
-		toggleCutButton.textContent = "Cut End";
+		updateCutToggleState(true);
 	}
 	updateCutlistDisplay();
 
@@ -1061,17 +1058,17 @@ function handleToggleCut() {
 	}
 }
 
-function updateViewerReadout() {
-	const frameNumber = getFrameNumber(videoElement.currentTime, activeFrameRate);
-	const frameTime = getFrameTime(frameNumber, activeFrameRate);
+function updateCutToggleState(isCutting) {
+	const label = isCutting ? "Cut end" : "Cut start";
 
+	toggleCutButton.dataset.cutState = isCutting ? "end" : "start";
+	toggleCutButton.title = label;
+	toggleCutButton.setAttribute("aria-label", label);
+}
+
+function updateViewerReadout() {
 	currentTimeElement.textContent = formatTime(videoElement.currentTime);
 	currentSecondsElement.textContent = videoElement.currentTime.toFixed(6);
-	currentFrameElement.textContent = String(frameNumber);
-	currentFrameTimeElement.textContent = formatTime(frameTime, 6);
-	currentFpsElement.textContent = Number.isFinite(activeFrameRate)
-		? `${activeFrameRate.toFixed(6)} (${activeFrameRateFraction})`
-		: String(activeFrameRateFraction || "Unknown");
 	updateTimelinePlayhead();
 }
 
@@ -1332,21 +1329,10 @@ document.addEventListener("keydown", (event) => {
 	}
 });
 
-timelineZoomInButton.addEventListener("click", () => {
-	zoomTimeline(1 / TIMELINE_ZOOM_FACTOR);
-});
-
-timelineZoomOutButton.addEventListener("click", () => {
-	zoomTimeline(TIMELINE_ZOOM_FACTOR);
-});
-
-timelineFitButton.addEventListener("click", () => {
-	setTimelineView(0, timelineDuration);
-});
-
-timelineCenterPlayheadButton.addEventListener("click", () => {
-	centerTimelineOn(videoElement.currentTime);
-});
+timelineRangeSlider.addEventListener("pointerdown", handleTimelineRangePointerDown);
+timelineRangeSlider.addEventListener("pointermove", handleTimelineRangePointerMove);
+timelineRangeSlider.addEventListener("pointerup", handleTimelineRangePointerUp);
+timelineRangeSlider.addEventListener("pointercancel", handleTimelineRangePointerUp);
 
 async function setupTimeline(videoElement) {
 	timelineDuration = Number.isFinite(videoElement.duration) ? videoElement.duration : 0;
@@ -1372,7 +1358,7 @@ function setTimelineView(start, end, options = {}) {
 		timelineViewStart = 0;
 		timelineViewEnd = 0;
 		updateTimelineViewLabels();
-		updateTimelineZoomControls();
+		updateTimelineRangeControls();
 		updateTimelinePanState();
 		return;
 	}
@@ -1391,7 +1377,7 @@ function setTimelineView(start, end, options = {}) {
 	timelineViewStart = nextStart;
 	timelineViewEnd = nextEnd;
 	updateTimelineViewLabels();
-	updateTimelineZoomControls();
+	updateTimelineRangeControls();
 	updateTimelinePanState();
 	renderCutOverlays(cutList);
 	updateTimelinePlayhead();
@@ -1401,18 +1387,101 @@ function setTimelineView(start, end, options = {}) {
 	}
 }
 
-function zoomTimeline(windowMultiplier) {
+function handleTimelineRangePointerDown(event) {
 	if (!canUseTimeline()) {
 		return;
 	}
 
-	const currentWindow = getTimelineViewDuration();
-	const nextWindow = clamp(currentWindow * windowMultiplier, getMinimumTimelineWindow(), timelineDuration);
-	const anchor = getTimelineAnchorTime();
-	const anchorRatio = currentWindow > 0 ? clamp((anchor - timelineViewStart) / currentWindow, 0, 1) : 0.5;
-	const nextStart = anchor - nextWindow * anchorRatio;
+	const mode = getTimelineRangeDragMode(event);
+	const pointerTime = getTimelineRangePointerTime(event);
 
-	setTimelineView(nextStart, nextStart + nextWindow);
+	timelineRangeDrag = {
+		mode,
+		pointerTime,
+		start: timelineViewStart,
+		end: timelineViewEnd,
+		duration: getTimelineViewDuration(),
+	};
+	timelineRangeSlider.setPointerCapture(event.pointerId);
+	event.preventDefault();
+}
+
+function handleTimelineRangePointerMove(event) {
+	if (!timelineRangeDrag) {
+		return;
+	}
+
+	updateTimelineRangeDrag(event, { renderThumbnails: false });
+	scheduleTimelineThumbnailRefresh();
+}
+
+function handleTimelineRangePointerUp(event) {
+	if (!timelineRangeDrag) {
+		return;
+	}
+
+	updateTimelineRangeDrag(event);
+	timelineRangeDrag = null;
+
+	if (timelineRangeSlider.hasPointerCapture(event.pointerId)) {
+		timelineRangeSlider.releasePointerCapture(event.pointerId);
+	}
+}
+
+function updateTimelineRangeDrag(event, options = {}) {
+	if (!canUseTimeline()) {
+		return;
+	}
+
+	const pointerTime = getTimelineRangePointerTime(event);
+	const minWindow = getMinimumTimelineWindow();
+
+	if (timelineRangeDrag.mode === "start") {
+		const nextStart = clamp(pointerTime, 0, timelineViewEnd - minWindow);
+		setTimelineView(nextStart, timelineViewEnd, options);
+		return;
+	}
+
+	if (timelineRangeDrag.mode === "end") {
+		const nextEnd = clamp(pointerTime, timelineViewStart + minWindow, timelineDuration);
+		setTimelineView(timelineViewStart, nextEnd, options);
+		return;
+	}
+
+	const delta = pointerTime - timelineRangeDrag.pointerTime;
+	let nextStart = timelineRangeDrag.start + delta;
+	nextStart = clamp(nextStart, 0, Math.max(0, timelineDuration - timelineRangeDrag.duration));
+	setTimelineView(nextStart, nextStart + timelineRangeDrag.duration, options);
+}
+
+function getTimelineRangeDragMode(event) {
+	if (event.target === timelineRangeStartHandle) {
+		return "start";
+	}
+
+	if (event.target === timelineRangeEndHandle) {
+		return "end";
+	}
+
+	if (event.target === timelineRangeWindow) {
+		return "window";
+	}
+
+	const pointerTime = getTimelineRangePointerTime(event);
+	const distanceToStart = Math.abs(pointerTime - timelineViewStart);
+	const distanceToEnd = Math.abs(pointerTime - timelineViewEnd);
+
+	if (pointerTime > timelineViewStart && pointerTime < timelineViewEnd) {
+		return "window";
+	}
+
+	return distanceToStart <= distanceToEnd ? "start" : "end";
+}
+
+function getTimelineRangePointerTime(event) {
+	const rect = timelineRangeTrack.getBoundingClientRect();
+	const progress = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
+	return clamp(progress, 0, 1) * timelineDuration;
 }
 
 function centerTimelineOn(time) {
@@ -1427,6 +1496,23 @@ function centerTimelineOn(time) {
 }
 
 function handleTimelineWheel(event) {
+	if (event.altKey) {
+		if (!canUseTimeline()) {
+			return;
+		}
+
+		event.preventDefault();
+		const wheelDelta = getTimelineWheelDelta(event);
+
+		if (!wheelDelta) {
+			return;
+		}
+
+		zoomTimelineAt(getTimelinePointerTime(event), wheelDelta, { renderThumbnails: false });
+		scheduleTimelineThumbnailRefresh();
+		return;
+	}
+
 	if (!canPanTimeline()) {
 		return;
 	}
@@ -1444,6 +1530,28 @@ function handleTimelineWheel(event) {
 
 	setTimelineView(nextStart, nextStart + viewDuration, { renderThumbnails: false });
 	scheduleTimelineThumbnailRefresh();
+}
+
+function zoomTimelineAt(anchorTime, wheelDelta, options = {}) {
+	const currentWindow = getTimelineViewDuration() || timelineDuration;
+	const minWindow = getMinimumTimelineWindow();
+	const zoomScale = Math.exp(Math.min(Math.abs(wheelDelta), 800) * TIMELINE_WHEEL_ZOOM_INTENSITY);
+	const nextWindow = clamp(
+		currentWindow * (wheelDelta > 0 ? 1 / zoomScale : zoomScale),
+		minWindow,
+		timelineDuration,
+	);
+	const anchor = Number.isFinite(anchorTime) ? anchorTime : getTimelineAnchorTime();
+	const anchorRatio = currentWindow > 0 ? clamp((anchor - timelineViewStart) / currentWindow, 0, 1) : 0.5;
+	const nextStart = anchor - nextWindow * anchorRatio;
+
+	setTimelineView(nextStart, nextStart + nextWindow, options);
+}
+
+function getTimelinePointerTime(event) {
+	const rect = timelineElement.getBoundingClientRect();
+	const progress = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
+	return timelineProgressToTime(clamp(progress, 0, 1));
 }
 
 function getTimelineWheelDelta(event) {
@@ -1485,28 +1593,33 @@ function ensureTimeVisible(time) {
 }
 
 function updateTimelineViewLabels() {
-	const viewDuration = getTimelineViewDuration();
-	const isFullTimeline = canUseTimeline() && timelineViewStart <= 0 && timelineViewEnd >= timelineDuration;
-
 	timelineStartElement.textContent = formatClockTime(timelineViewStart);
 	timelineEndElement.textContent = formatClockTime(timelineViewEnd);
-	timelineWindowElement.textContent = isFullTimeline
-		? "Full timeline"
-		: `${formatClockTime(timelineViewStart)} to ${formatClockTime(timelineViewEnd)} (${formatClockTime(viewDuration)})`;
 }
 
-function updateTimelineZoomControls() {
-	const canZoom = canUseTimeline();
-	const viewDuration = getTimelineViewDuration();
-	const minWindow = getMinimumTimelineWindow();
+function updateTimelineRangeControls() {
+	const canAdjust = canUseTimeline();
+	const rangeDisabled = !canAdjust || timelineDuration <= getMinimumTimelineWindow() + 0.001;
 
-	[timelineZoomOutButton, timelineZoomInButton, timelineFitButton, timelineCenterPlayheadButton].forEach((button) => {
-		button.disabled = !canZoom;
+	[timelineRangeWindow, timelineRangeStartHandle, timelineRangeEndHandle].forEach((control) => {
+		control.disabled = rangeDisabled;
 	});
 
-	timelineZoomInButton.disabled = !canZoom || viewDuration <= minWindow + 0.001;
-	timelineZoomOutButton.disabled = !canZoom || viewDuration >= timelineDuration - 0.001;
-	timelineFitButton.disabled = !canZoom || viewDuration >= timelineDuration - 0.001;
+	timelineRangeSlider.classList.toggle("timeline-range-slider--disabled", rangeDisabled);
+	updateTimelineRangeSliderPosition();
+}
+
+function updateTimelineRangeSliderPosition() {
+	const startPercent = canUseTimeline() && timelineDuration > 0 ? (timelineViewStart / timelineDuration) * 100 : 0;
+	const endPercent = canUseTimeline() && timelineDuration > 0 ? (timelineViewEnd / timelineDuration) * 100 : 100;
+	const startText = formatClockTime(timelineViewStart);
+	const endText = formatClockTime(timelineViewEnd);
+
+	timelineRangeSlider.style.setProperty("--timeline-range-start", `${startPercent}%`);
+	timelineRangeSlider.style.setProperty("--timeline-range-end", `${endPercent}%`);
+	timelineRangeStartHandle.title = `Start: ${startText}`;
+	timelineRangeEndHandle.title = `End: ${endText}`;
+	timelineRangeWindow.title = `${startText} to ${endText}`;
 }
 
 function getTimelineAnchorTime() {
@@ -1580,7 +1693,7 @@ async function renderTimelineThumbnails(src, duration) {
 			timelineStatusElement.textContent = `Building thumbnails ${index + 1}/${thumbnailCount}...`;
 		}
 
-		timelineStatusElement.textContent = "Drag to scrub. Scroll while zoomed to pan. Red spans are cuts.";
+		timelineStatusElement.textContent = "Drag to scrub. Use the range bar to change or pan the visible span. Red spans are cuts.";
 	} catch (error) {
 		console.error("Error building timeline thumbnails:", error);
 		timelineStatusElement.textContent = "Thumbnails unavailable. Drag the strip to scrub.";
@@ -3218,15 +3331,8 @@ editVideoButton.addEventListener("click", async () => {
 	}
 });
 
-speedUpButton.addEventListener("click", function () {
-	videoElement.playbackRate += 0.5; // Increase playback speed by 0.5
-	updatePlaybackRateDisplay();
-});
-
-slowDownButton.addEventListener("click", function () {
-	if (videoElement.playbackRate > 0.5) {
-		videoElement.playbackRate -= 0.5; // Decrease playback speed by 0.5, but keep it positive
-	}
+playbackRateSlider.addEventListener("input", () => {
+	videoElement.playbackRate = Number(playbackRateSlider.value);
 	updatePlaybackRateDisplay();
 });
 
@@ -3239,9 +3345,10 @@ function setActionControlsEnabled(enabled) {
 }
 
 function setTransportControlsEnabled(enabled) {
-	[seekBackwardButton, seekForwardButton, toggleCutButton, speedUpButton, slowDownButton].forEach((button) => {
+	[seekBackwardButton, seekForwardButton, toggleCutButton].forEach((button) => {
 		button.disabled = !enabled;
 	});
+	playbackRateSlider.disabled = !enabled;
 	frameStepSeekInput.disabled = !enabled;
 	skipCutsPreviewInput.disabled = !enabled;
 }
@@ -3252,6 +3359,7 @@ function updateCutCount(count) {
 
 function updatePlaybackRateDisplay() {
 	playbackRateElement.textContent = `${videoElement.playbackRate.toFixed(1)}x`;
+	playbackRateSlider.value = String(videoElement.playbackRate);
 }
 
 function getFileName(src) {

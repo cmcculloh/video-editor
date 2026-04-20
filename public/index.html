@@ -113,18 +113,67 @@
 
                 <section class="timeline-panel" aria-label="Timeline">
                     <div class="timeline-panel__header">
-                        <div>
+                        <div class="timeline-panel__title">
                             <h2>Timeline</h2>
                             <p id="timeline-status" class="hint">Choose a video to build the thumbnail strip.</p>
                         </div>
-                        <span id="timeline-duration" class="meta-pill">00:00:00</span>
+                        <div class="timeline-panel__meta">
+                            <span id="timeline-duration" class="meta-pill" hidden>00:00:00</span>
+                            <div id="viewer-readout" class="viewer-readout" aria-label="Viewer readout">
+                                <div class="readout-item">
+                                    <span>Timecode</span>
+                                    <strong id="currentTime">00:00:00.000</strong>
+                                </div>
+                                <div class="readout-item">
+                                    <span>Seconds</span>
+                                    <strong id="currentSeconds">0.000000</strong>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="timeline-tools" aria-label="Timeline zoom controls">
-                        <button id="timeline-zoom-out" class="button button--ghost" type="button" disabled>Zoom Out</button>
-                        <button id="timeline-zoom-in" class="button button--secondary" type="button" disabled>Zoom In</button>
-                        <button id="timeline-fit" class="button button--ghost" type="button" disabled>Fit</button>
-                        <button id="timeline-center-playhead" class="button button--ghost" type="button" disabled>Center Playhead</button>
-                        <span id="timeline-window" class="rate-pill">Full timeline</span>
+                    <div class="timeline-tools" aria-label="Timeline editing controls">
+                        <div class="timeline-tool-cluster" aria-label="Cut and seek controls">
+                            <button id="seekBackward" class="icon-button" type="button" title="Back 10 seconds" aria-label="Back 10 seconds" disabled>
+                                <span aria-hidden="true">‹10</span>
+                            </button>
+                            <button id="toggleCut" class="icon-button icon-button--cut" type="button" title="Cut start" aria-label="Cut start" disabled>
+                                <span aria-hidden="true">✂</span>
+                            </button>
+                            <button id="seekForward" class="icon-button" type="button" title="Forward 10 seconds" aria-label="Forward 10 seconds" disabled>
+                                <span aria-hidden="true">10›</span>
+                            </button>
+                        </div>
+                        <div id="timeline-range-slider" class="timeline-range-slider timeline-range-slider--disabled" aria-label="Visible timeline range">
+                            <div id="timeline-range-track" class="timeline-range-slider__track">
+                                <button id="timeline-range-window" class="timeline-range-slider__window" type="button" aria-label="Drag visible timeline range" disabled></button>
+                                <button id="timeline-range-start" class="timeline-range-slider__handle timeline-range-slider__handle--start" type="button" aria-label="Timeline view start" disabled></button>
+                                <button id="timeline-range-end" class="timeline-range-slider__handle timeline-range-slider__handle--end" type="button" aria-label="Timeline view end" disabled></button>
+                            </div>
+                        </div>
+                        <div class="timeline-tool-cluster timeline-tool-cluster--secondary" aria-label="Preview and export controls">
+                            <label class="icon-toggle" title="Frame seek">
+                                <input type="checkbox" id="frame-step-seek">
+                                <span aria-hidden="true">▦</span>
+                            </label>
+                            <label class="icon-toggle toggle--preview" title="Skip cuts preview">
+                                <input type="checkbox" id="skip-cuts-preview">
+                                <span aria-hidden="true">⤼</span>
+                            </label>
+                            <span id="skip-cuts-status" class="visually-hidden">Preview off</span>
+                            <button id="edit-video" class="icon-button icon-button--primary" type="button" title="Edit video" aria-label="Edit video" disabled>
+                                <span aria-hidden="true">▶</span>
+                            </button>
+                            <label class="icon-toggle toggle--warning" title="Debug black removals">
+                                <input type="checkbox" id="debug-black-cuts">
+                                <span aria-hidden="true">◼</span>
+                            </label>
+                        </div>
+                        <label class="speed-control" for="playback-rate-slider">
+                            <span aria-hidden="true">🐢</span>
+                            <input id="playback-rate-slider" type="range" min="0.5" max="3" step="0.5" value="1" disabled>
+                            <strong id="playback-rate">1.0x</strong>
+                            <span aria-hidden="true">🐇</span>
+                        </label>
                     </div>
                     <div
                         id="timeline"
@@ -162,112 +211,64 @@
                         </div>
                         <p class="hint">Drag a handle, use arrow keys to nudge, or enter an exact second.</p>
                     </section>
-                    <section id="cut-options-editor" class="cut-options-editor" aria-live="polite" hidden>
-                        <div class="cut-options-editor__summary">
-                            <span id="cut-options-label">No cut selected</span>
-                            <strong id="cut-options-summary">Remove from final edit</strong>
-                        </div>
-                        <label class="field field--compact" for="cut-action-select">
-                            <span>Final edit</span>
-                            <select id="cut-action-select">
-                                <option value="remove">Remove entirely</option>
-                                <option value="replace">Replace video with color</option>
-                            </select>
-                        </label>
-                        <label class="field field--color" for="cut-color-input">
-                            <span>Replacement color</span>
-                            <input id="cut-color-input" type="color" value="#000000">
-                        </label>
-                        <div class="cut-options-editor__actions">
-                            <button id="cut-color-pick-video" class="button button--secondary" type="button">Pick from Video</button>
-                            <span id="cut-color-swatch" class="cut-color-swatch" aria-hidden="true"></span>
-                        </div>
-                        <div class="cut-options-editor__reason">
-                            <label class="field" for="cut-reason-category-select">
-                                <span>Reason</span>
-                                <select id="cut-reason-category-select">
-                                    <option value="">Uncategorized</option>
-                                </select>
-                            </label>
-                            <label class="field" for="cut-reason-subcategory-select">
-                                <span>VidAngel filter</span>
-                                <select id="cut-reason-subcategory-select" disabled>
-                                    <option value="">Choose a reason first</option>
-                                </select>
-                            </label>
-                            <label class="field" for="cut-reason-note-input">
-                                <span>Note</span>
-                                <input id="cut-reason-note-input" type="text" maxlength="280" placeholder="Optional detail for this cut">
-                            </label>
-                        </div>
-                        <div class="cut-options-editor__cut-actions">
-                            <button id="merge-previous-cut" class="button button--ghost" type="button">Merge Previous</button>
-                            <button id="merge-next-cut" class="button button--ghost" type="button">Merge Next</button>
-                            <button id="delete-cut" class="button button--danger" type="button">Delete Cut</button>
-                        </div>
-                        <p class="hint">Color replacement keeps this range in the final edit and preserves its audio. Reasons use VidAngel-style filter categories.</p>
-                    </section>
                 </section>
 
-                <div id="viewer-readout" class="viewer-readout" aria-label="Viewer readout">
-                    <div class="readout-item">
-                        <span>Timecode</span>
-                        <strong id="currentTime">00:00:00.000</strong>
-                    </div>
-                    <div class="readout-item">
-                        <span>Seconds</span>
-                        <strong id="currentSeconds">0.000000</strong>
-                    </div>
-                    <div class="readout-item">
-                        <span>Frame</span>
-                        <strong id="currentFrame">0</strong>
-                    </div>
-                    <div class="readout-item">
-                        <span>Frame time</span>
-                        <strong id="currentFrameTime">00:00:00.000000</strong>
-                    </div>
-                    <div class="readout-item">
-                        <span>FPS</span>
-                        <strong id="currentFps">Unknown</strong>
-                    </div>
-                </div>
-
-                <div class="control-surface" aria-label="Editing controls">
-                    <div class="control-group">
-                        <button id="seekBackward" class="button button--secondary" disabled>Back 10s</button>
-                        <button id="seekForward" class="button button--secondary" disabled>Forward 10s</button>
-                        <label class="toggle">
-                            <input type="checkbox" id="frame-step-seek">
-                            <span>Frame seek</span>
-                        </label>
-                        <label class="toggle toggle--preview">
-                            <input type="checkbox" id="skip-cuts-preview">
-                            <span>Skip cuts</span>
-                        </label>
-                        <span id="skip-cuts-status" class="rate-pill">Preview off</span>
-                    </div>
-                    <div class="control-group">
-                        <button id="slowDown" class="button button--ghost" disabled>Slower</button>
-                        <button id="speedUp" class="button button--ghost" disabled>Faster</button>
-                        <span id="playback-rate" class="rate-pill">1.0x</span>
-                    </div>
-                    <div class="control-group control-group--primary">
-                        <button id="toggleCut" class="button button--danger" disabled>Cut Start</button>
-                        <button id="save-cutlist" class="button button--secondary" disabled>Save Cutlist</button>
-                        <button id="edit-video" class="button button--primary" disabled>Edit Video</button>
-                        <label class="toggle toggle--warning">
-                            <input type="checkbox" id="debug-black-cuts">
-                            <span>Debug black removals</span>
-                        </label>
-                    </div>
-                </div>
             </section>
 
             <aside class="side-rail" aria-label="Cutlist and output">
+                <section id="cut-options-editor" class="cut-options-editor" aria-live="polite" hidden>
+                    <div class="cut-options-editor__summary">
+                        <span id="cut-options-label">No cut selected</span>
+                        <strong id="cut-options-summary">Remove from final edit</strong>
+                    </div>
+                    <label class="field field--compact" for="cut-action-select">
+                        <span>Final edit</span>
+                        <select id="cut-action-select">
+                            <option value="remove">Remove entirely</option>
+                            <option value="replace">Replace video with color</option>
+                        </select>
+                    </label>
+                    <label class="field field--color" for="cut-color-input">
+                        <span>Replacement color</span>
+                        <input id="cut-color-input" type="color" value="#000000">
+                    </label>
+                    <div class="cut-options-editor__actions">
+                        <button id="cut-color-pick-video" class="button button--secondary" type="button">Pick from Video</button>
+                        <span id="cut-color-swatch" class="cut-color-swatch" aria-hidden="true"></span>
+                    </div>
+                    <div class="cut-options-editor__reason">
+                        <label class="field" for="cut-reason-category-select">
+                            <span>Reason</span>
+                            <select id="cut-reason-category-select">
+                                <option value="">Uncategorized</option>
+                            </select>
+                        </label>
+                        <label class="field" for="cut-reason-subcategory-select">
+                            <span>VidAngel filter</span>
+                            <select id="cut-reason-subcategory-select" disabled>
+                                <option value="">Choose a reason first</option>
+                            </select>
+                        </label>
+                        <label class="field" for="cut-reason-note-input">
+                            <span>Note</span>
+                            <input id="cut-reason-note-input" type="text" maxlength="280" placeholder="Optional detail for this cut">
+                        </label>
+                    </div>
+                    <div class="cut-options-editor__cut-actions">
+                        <button id="merge-previous-cut" class="button button--ghost" type="button">Merge Previous</button>
+                        <button id="merge-next-cut" class="button button--ghost" type="button">Merge Next</button>
+                        <button id="delete-cut" class="button button--danger" type="button">Delete Cut</button>
+                    </div>
+                    <p class="hint">Color replacement keeps this range in the final edit and preserves its audio.</p>
+                </section>
+
                 <section class="panel">
                     <div class="panel-header">
                         <h2>Cutlist</h2>
-                        <span id="cut-count" class="meta-pill">0 cuts</span>
+                        <div class="panel-header__actions">
+                            <span id="cut-count" class="meta-pill">0 cuts</span>
+                            <button id="save-cutlist" class="button button--secondary" type="button" disabled>Save</button>
+                        </div>
                     </div>
                     <textarea id="cutlist" rows="14" cols="80" spellcheck="false"></textarea>
                     <p class="hint">Each saved range can be removed, or replaced with a color while its audio stays.</p>
