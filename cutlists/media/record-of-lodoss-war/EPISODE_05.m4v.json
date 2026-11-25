@@ -1,0 +1,32 @@
+{
+  "videoSrc": "media/record-of-lodoss-war/EPISODE_05.m4v",
+  "cutList": [
+    {
+      "start": "1340.465440",
+      "end": "1352.010534",
+      "mode": "replace",
+      "color": "#000000"
+    }
+  ],
+  "episodeIdentity": {
+    "provider": "tvmaze",
+    "canonicalId": "tvmaze:episode:822032",
+    "showId": 17972,
+    "episodeId": 822032,
+    "showName": "Record of Lodoss War",
+    "episodeTitle": "The Desert King",
+    "season": 1,
+    "number": 5,
+    "airdate": "1990-11-30",
+    "url": "https://www.tvmaze.com/episodes/822032/record-of-lodoss-war-1x05-the-desert-king",
+    "showUrl": "https://www.tvmaze.com/shows/17972/record-of-lodoss-war",
+    "externals": {
+      "imdb": "tt0100044",
+      "thetvdb": 78777
+    },
+    "selectedAt": "2026-04-20T19:02:22.810Z"
+  },
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-04-20T19:08:29.903Z"
+}

@@ -1,0 +1,49 @@
+{
+  "videoSrc": "media/National Lampoon's Christmas Vaca.mp4",
+  "sourceType": "server",
+  "videoIdentity": {
+    "type": "server",
+    "path": "media/National Lampoon's Christmas Vaca.mp4"
+  },
+  "cutList": [
+    {
+      "start": "274.190842",
+      "end": "278.445096",
+      "mode": "remove"
+    },
+    {
+      "start": "914.581195",
+      "end": "1050.675615",
+      "mode": "remove"
+    },
+    {
+      "start": "1765.765665",
+      "end": "1773.189755",
+      "mode": "remove"
+    },
+    {
+      "start": "2141.891769",
+      "end": "2156.781658",
+      "mode": "remove"
+    },
+    {
+      "start": "2250.959164",
+      "end": "2253.711916",
+      "mode": "remove"
+    },
+    {
+      "start": "2640.098280",
+      "end": "2649.691206",
+      "mode": "remove"
+    },
+    {
+      "start": "3208.458275",
+      "end": "3279.946425",
+      "mode": "remove"
+    }
+  ],
+  "episodeIdentity": null,
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-11-23T16:03:48.309Z"
+}

@@ -1,0 +1,29 @@
+{
+  "videoSrc": "media/lotr/eating.mp4",
+  "cutList": [
+    {
+      "start": "1.793798",
+      "end": "3.671029",
+      "mode": "remove"
+    },
+    {
+      "start": "5.172814",
+      "end": "23.819975",
+      "mode": "remove"
+    },
+    {
+      "start": "25.405193",
+      "end": "52.061873",
+      "mode": "remove"
+    },
+    {
+      "start": "52.937914",
+      "end": "67.538600",
+      "mode": "remove"
+    }
+  ],
+  "episodeIdentity": null,
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-04-22T21:09:49.527Z"
+}

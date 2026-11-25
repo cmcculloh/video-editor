@@ -1,0 +1,24 @@
+{
+  "videoSrc": "media/Harry Potter and the Deathly Hall 2.mp4",
+  "sourceType": "server",
+  "videoIdentity": {
+    "type": "server",
+    "path": "media/Harry Potter and the Deathly Hall 2.mp4"
+  },
+  "cutList": [
+    {
+      "start": "6101.553212",
+      "end": "6113.465929",
+      "mode": "remove"
+    },
+    {
+      "start": "6118.987294",
+      "end": "6121.066821",
+      "mode": "remove"
+    }
+  ],
+  "episodeIdentity": null,
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-08-01T00:54:29.102Z"
+}

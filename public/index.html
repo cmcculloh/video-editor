@@ -28,6 +28,7 @@
                 <span>Local video</span>
                 <input id="local-video-input" type="file" accept="video/*">
             </label>
+            <button id="load-local-preview" class="button button--secondary setup-panel__button" type="button" disabled>Load Preview</button>
             <label class="field" for="intro-select">
                 <span>Intro</span>
                 <select id="intro-select">
@@ -101,12 +102,14 @@
                         <source src="">
                         Your browser does not support the video tag.
                     </video>
+                    <canvas id="blur-mask-canvas" class="blur-mask-canvas" aria-hidden="true"></canvas>
                     <div class="empty-state">
                         <img src="imgs/grid_0.webp" alt="">
                         <div class="empty-state__copy">
                             <p class="eyebrow">Ready</p>
                             <h2>Choose a video to start cutting.</h2>
                             <p>Arrow keys step frame by frame after a file is loaded.</p>
+                            <button id="load-local-preview-stage" class="button button--primary" type="button" hidden>Load Selected Preview</button>
                         </div>
                     </div>
                 </div>
@@ -150,7 +153,7 @@
                                 <button id="timeline-range-end" class="timeline-range-slider__handle timeline-range-slider__handle--end" type="button" aria-label="Timeline view end" disabled></button>
                             </div>
                         </div>
-                        <div class="timeline-tool-cluster timeline-tool-cluster--secondary" aria-label="Preview and export controls">
+                        <div class="timeline-tool-cluster timeline-tool-cluster--secondary" aria-label="Preview controls">
                             <label class="icon-toggle" title="Frame seek">
                                 <input type="checkbox" id="frame-step-seek">
                                 <span aria-hidden="true">▦</span>
@@ -160,9 +163,6 @@
                                 <span aria-hidden="true">⤼</span>
                             </label>
                             <span id="skip-cuts-status" class="visually-hidden">Preview off</span>
-                            <button id="edit-video" class="icon-button icon-button--primary" type="button" title="Edit video" aria-label="Edit video" disabled>
-                                <span aria-hidden="true">▶</span>
-                            </button>
                             <label class="icon-toggle toggle--warning" title="Debug black removals">
                                 <input type="checkbox" id="debug-black-cuts">
                                 <span aria-hidden="true">◼</span>
@@ -226,6 +226,7 @@
                         <select id="cut-action-select">
                             <option value="remove">Remove entirely</option>
                             <option value="replace">Replace video with color</option>
+                            <option value="blur">Blur selected area</option>
                         </select>
                     </label>
                     <label class="field field--color" for="cut-color-input">
@@ -235,6 +236,29 @@
                     <div class="cut-options-editor__actions">
                         <button id="cut-color-pick-video" class="button button--secondary" type="button">Pick from Video</button>
                         <span id="cut-color-swatch" class="cut-color-swatch" aria-hidden="true"></span>
+                    </div>
+                    <div id="blur-mask-editor" class="blur-mask-editor">
+                        <label class="field" for="blur-tool-select">
+                            <span>Blur tool</span>
+                            <select id="blur-tool-select">
+                                <option value="rectangle">Rectangle</option>
+                                <option value="lasso">Lasso</option>
+                                <option value="brush">Brush</option>
+                            </select>
+                        </label>
+                        <label class="field" for="blur-amount-input">
+                            <span>Blur</span>
+                            <input id="blur-amount-input" type="range" min="4" max="32" step="2" value="18">
+                        </label>
+                        <label class="field" for="blur-brush-size-input">
+                            <span>Brush</span>
+                            <input id="blur-brush-size-input" type="range" min="8" max="96" step="2" value="36">
+                        </label>
+                        <div class="blur-mask-editor__actions">
+                            <button id="blur-mask-draw" class="button button--secondary" type="button">Draw Area</button>
+                            <button id="blur-mask-clear-last" class="button button--ghost" type="button">Undo Area</button>
+                            <button id="blur-mask-clear" class="button button--ghost" type="button">Clear</button>
+                        </div>
                     </div>
                     <div class="cut-options-editor__reason">
                         <label class="field" for="cut-reason-category-select">
@@ -259,7 +283,7 @@
                         <button id="merge-next-cut" class="button button--ghost" type="button">Merge Next</button>
                         <button id="delete-cut" class="button button--danger" type="button">Delete Cut</button>
                     </div>
-                    <p class="hint">Color replacement keeps this range in the final edit and preserves its audio.</p>
+                    <p class="hint">Color replacement and blur keep this range in the final edit and preserve its audio.</p>
                 </section>
 
                 <section class="panel">
@@ -267,11 +291,12 @@
                         <h2>Cutlist</h2>
                         <div class="panel-header__actions">
                             <span id="cut-count" class="meta-pill">0 cuts</span>
-                            <button id="save-cutlist" class="button button--secondary" type="button" disabled>Save</button>
+                            <button id="save-cutlist" class="button button--secondary" type="button" disabled>Save Cutlist</button>
+                            <button id="edit-video" class="button button--primary" type="button" disabled>Save Edited Video</button>
                         </div>
                     </div>
                     <textarea id="cutlist" rows="14" cols="80" spellcheck="false"></textarea>
-                    <p class="hint">Each saved range can be removed, or replaced with a color while its audio stays.</p>
+                    <p class="hint">Each saved range can be removed, replaced with a color, or blurred while its audio stays.</p>
                 </section>
 
                 <section id="edit-progress" class="edit-progress panel" hidden>

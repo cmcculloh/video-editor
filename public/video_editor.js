@@ -1,8 +1,12 @@
 const urlParams = new URLSearchParams(window.location.search);
 let videoSrc = urlParams.get("src");
 const videoElement = document.getElementById("video");
+const videoStageElement = document.querySelector(".video-stage");
+const blurMaskCanvas = document.getElementById("blur-mask-canvas");
 const videoSelect = document.getElementById("video-select");
 const localVideoInput = document.getElementById("local-video-input");
+const loadLocalPreviewButton = document.getElementById("load-local-preview");
+const loadLocalPreviewStageButton = document.getElementById("load-local-preview-stage");
 const introSelect = document.getElementById("intro-select");
 const outroSelect = document.getElementById("outro-select");
 const introSelected = document.getElementById("intro-selected");
@@ -10,7 +14,6 @@ const outroSelected = document.getElementById("outro-selected");
 const introPreview = document.getElementById("intro-preview");
 const outroPreview = document.getElementById("outro-preview");
 const video = document.getElementById("video");
-const timestamps = document.getElementById("timestamps");
 const saveCutlistButton = document.getElementById("save-cutlist");
 const editVideoButton = document.getElementById("edit-video");
 const debugBlackCutsInput = document.getElementById("debug-black-cuts");
@@ -49,6 +52,13 @@ const cutActionSelectElement = document.getElementById("cut-action-select");
 const cutColorInputElement = document.getElementById("cut-color-input");
 const cutColorPickVideoButton = document.getElementById("cut-color-pick-video");
 const cutColorSwatchElement = document.getElementById("cut-color-swatch");
+const blurMaskEditorElement = document.getElementById("blur-mask-editor");
+const blurToolSelectElement = document.getElementById("blur-tool-select");
+const blurAmountInputElement = document.getElementById("blur-amount-input");
+const blurBrushSizeInputElement = document.getElementById("blur-brush-size-input");
+const blurMaskDrawButton = document.getElementById("blur-mask-draw");
+const blurMaskClearLastButton = document.getElementById("blur-mask-clear-last");
+const blurMaskClearButton = document.getElementById("blur-mask-clear");
 const cutReasonCategorySelectElement = document.getElementById("cut-reason-category-select");
 const cutReasonSubcategorySelectElement = document.getElementById("cut-reason-subcategory-select");
 const cutReasonNoteInputElement = document.getElementById("cut-reason-note-input");
@@ -94,9 +104,15 @@ const TIMELINE_WHEEL_LINE_PIXELS = 18;
 const TIMELINE_WHEEL_PAGE_PIXELS = 240;
 const TIMELINE_WHEEL_ZOOM_INTENSITY = 0.0035;
 const TIMELINE_THUMBNAIL_REFRESH_DELAY = 180;
+const TIMELINE_SCRUB_SEEK_DELAY = 80;
+const TIMELINE_SCRUB_MIN_SEEK_DELTA = 0.025;
+const LOCAL_THUMBNAILS_ENABLED = false;
 const CUT_MODE_REMOVE = "remove";
 const CUT_MODE_REPLACE = "replace";
+const CUT_MODE_BLUR = "blur";
 const DEFAULT_REPLACEMENT_COLOR = "#000000";
+const DEFAULT_BLUR_AMOUNT = 18;
+const DEFAULT_BLUR_BRUSH_SIZE = 0.055;
 const LOCAL_CUTLIST_STORAGE_PREFIX = "cutlist-studio:local:";
 const DEFAULT_LOCAL_FRAME_RATE = 30;
 const CLIENT_EXPORT_OUTPUT_EXTENSION = "mp4";
@@ -187,6 +203,9 @@ let timelineViewEnd = 0;
 let timelineThumbnailRun = 0;
 let timelineThumbnailRefreshTimer = null;
 let timelineScrubbing = false;
+let timelineScrubSeekTimer = null;
+let timelineScrubPendingTime = null;
+let timelineScrubPendingExact = false;
 let timelineRangeDrag = null;
 let selectedCutIndex = null;
 let selectedCutPoint = null;
@@ -194,26 +213,31 @@ let activeCutPointDrag = null;
 let previewSkipFrame = null;
 let lastSkippedCutEnd = null;
 let videoColorPickActive = false;
+let blurMaskDrawingActive = false;
+let activeBlurMaskDraft = null;
 let episodeIdentity = null;
 let showSearchResults = [];
 let currentShowEpisodes = [];
 let currentVideoSource = videoSrc ? createServerVideoSource(videoSrc) : null;
 let currentVideoObjectUrl = null;
 let finalVideoObjectUrl = null;
+let currentVideoLoadController = null;
 let editorEventListenersInitialized = false;
 let activeFrameRateFraction = DEFAULT_LOCAL_FRAME_RATE;
 let activeFrameRate = DEFAULT_LOCAL_FRAME_RATE;
 let cutInProgress = null;
 let ffmpegToolsPromise = null;
 let clientExportProgress = null;
+let clientFfmpegLogs = [];
 
 document.body.classList.toggle("has-video", hasCurrentVideo());
 selectedVideoLabel.textContent = getCurrentVideoLabel();
 episodeSearchInput.value = guessShowSearchQuery(videoSrc);
-setActionControlsEnabled(hasCurrentVideo());
+setActionControlsEnabled(hasLoadedCurrentVideoPreview());
 setTransportControlsEnabled(false);
 updatePlaybackRateDisplay();
 updateCutToggleState(false);
+updateLocalPreviewButton();
 updatePreviewSkipState();
 updateEpisodeMatchDisplay();
 populateCutReasonCategorySelect();
@@ -249,6 +273,8 @@ function createServerVideoSource(src) {
 		file: null,
 		displayName: getFileName(src),
 		fileName: getPathFileName(src),
+		previewLoaded: false,
+		previewLoading: false,
 		identity: {
 			type: "server",
 			path: src,
@@ -256,7 +282,7 @@ function createServerVideoSource(src) {
 	};
 }
 
-function createLocalVideoSource(file, playbackSrc) {
+function createLocalVideoSource(file, playbackSrc = "") {
 	return {
 		type: "local",
 		videoSrc: file.name,
@@ -264,6 +290,8 @@ function createLocalVideoSource(file, playbackSrc) {
 		file,
 		displayName: getFileName(file.name),
 		fileName: file.name,
+		previewLoaded: false,
+		previewLoading: false,
 		identity: createLocalVideoIdentity(file),
 	};
 }
@@ -282,14 +310,31 @@ function hasCurrentVideo() {
 	return Boolean(currentVideoSource);
 }
 
+function hasLoadedCurrentVideoPreview() {
+	return Boolean(currentVideoSource && currentVideoSource.previewLoaded);
+}
+
+function canLoadSelectedLocalPreview() {
+	return Boolean(
+		currentVideoSource
+			&& currentVideoSource.type === "local"
+			&& !currentVideoSource.previewLoading
+			&& !currentVideoSource.previewLoaded
+	);
+}
+
 function getCurrentVideoLabel() {
 	if (!currentVideoSource) {
 		return "No video loaded";
 	}
 
-	return currentVideoSource.type === "local"
-		? `${currentVideoSource.displayName} - local file`
-		: currentVideoSource.displayName;
+	if (currentVideoSource.type !== "local") {
+		return currentVideoSource.displayName;
+	}
+
+	return currentVideoSource.previewLoaded
+		? `${currentVideoSource.displayName} - local preview`
+		: `${currentVideoSource.displayName} - local file selected`;
 }
 
 function getCurrentPlaybackSrc() {
@@ -308,22 +353,78 @@ function loadCurrentVideoSource() {
 
 	const sourceElement = videoElement.getElementsByTagName("source")[0];
 
+	if (currentVideoSource.type === "local" && !currentVideoSource.playbackSrc) {
+		currentVideoObjectUrl = URL.createObjectURL(currentVideoSource.file);
+		currentVideoSource.playbackSrc = currentVideoObjectUrl;
+	}
+
+	abortCurrentVideoLoad();
+	currentVideoSource.previewLoading = true;
+	currentVideoSource.previewLoaded = false;
+	updateLocalPreviewButton();
 	document.body.classList.add("has-video");
 	selectedVideoLabel.textContent = getCurrentVideoLabel();
-	setActionControlsEnabled(true);
+	setActionControlsEnabled(false);
 	setTransportControlsEnabled(false);
 	hideFinalVideo();
 	timelineStatusElement.textContent = "Loading video metadata...";
+	videoElement.preload = currentVideoSource.type === "local" ? "metadata" : "auto";
 	sourceElement.src = currentVideoSource.playbackSrc;
 	videoElement.removeAttribute("src");
-	videoElement.addEventListener("loadedmetadata", setupCurrentVideo, { once: true });
+	currentVideoLoadController = new AbortController();
+	videoElement.addEventListener("loadedmetadata", setupCurrentVideo, {
+		once: true,
+		signal: currentVideoLoadController.signal,
+	});
+	videoElement.addEventListener("error", handleCurrentVideoLoadError, {
+		once: true,
+		signal: currentVideoLoadController.signal,
+	});
 	videoElement.load();
 }
 
+function loadSelectedLocalPreview() {
+	if (!canLoadSelectedLocalPreview()) {
+		return;
+	}
+
+	loadCurrentVideoSource();
+}
+
 async function setupCurrentVideo() {
+	if (currentVideoSource) {
+		currentVideoSource.previewLoading = false;
+		currentVideoSource.previewLoaded = true;
+	}
+
+	selectedVideoLabel.textContent = getCurrentVideoLabel();
+	setActionControlsEnabled(true);
+	updateLocalPreviewButton();
 	const frameRateFraction = await getCurrentFrameRate();
 	console.log("frame rate:", frameRateFraction);
 	setupEventListeners(videoElement, frameRateFraction);
+}
+
+function handleCurrentVideoLoadError() {
+	if (currentVideoSource) {
+		currentVideoSource.previewLoading = false;
+		currentVideoSource.previewLoaded = false;
+	}
+
+	document.body.classList.remove("has-video");
+	setActionControlsEnabled(false);
+	setTransportControlsEnabled(false);
+	updateLocalPreviewButton();
+	timelineStatusElement.textContent = "Preview could not be loaded for this file.";
+	statusElement.textContent = "The browser could not load a preview for this local video. The file was not uploaded.";
+	showToast("Preview unavailable", "The browser could not decode this file for preview.", "error");
+}
+
+function abortCurrentVideoLoad() {
+	if (currentVideoLoadController) {
+		currentVideoLoadController.abort();
+		currentVideoLoadController = null;
+	}
 }
 
 async function getCurrentFrameRate() {
@@ -341,6 +442,7 @@ async function getCurrentFrameRate() {
 function resetVideoElement() {
 	const sourceElement = videoElement.getElementsByTagName("source")[0];
 
+	abortCurrentVideoLoad();
 	document.body.classList.remove("has-video");
 	selectedVideoLabel.textContent = "No video loaded";
 	setActionControlsEnabled(false);
@@ -348,12 +450,12 @@ function resetVideoElement() {
 	sourceElement.removeAttribute("src");
 	videoElement.removeAttribute("src");
 	videoElement.load();
+	updateLocalPreviewButton();
 }
 
 function selectLocalVideoFile(file) {
 	releaseCurrentLocalObjectUrl();
-	currentVideoObjectUrl = URL.createObjectURL(file);
-	currentVideoSource = createLocalVideoSource(file, currentVideoObjectUrl);
+	currentVideoSource = createLocalVideoSource(file);
 	videoSrc = file.name;
 	videoSelect.value = "";
 
@@ -361,21 +463,32 @@ function selectLocalVideoFile(file) {
 	nextUrl.searchParams.delete("src");
 	window.history.replaceState({}, "", nextUrl.toString());
 
+	resetVideoElement();
 	resetEditorForNewVideo();
 	loadLocalCutlistForCurrentVideo();
-	loadCurrentVideoSource();
+	selectedVideoLabel.textContent = getCurrentVideoLabel();
+	timelineStatusElement.textContent = "Preview is not loaded yet.";
+	setActionControlsEnabled(false);
+	setTransportControlsEnabled(false);
+	updateLocalPreviewButton();
 	statusElement.textContent = [
-		`Loaded local file: ${file.name}`,
-		"The source video stays in this browser. Save downloads a cutlist JSON; Edit Video renders locally with WebAssembly.",
-		"Local frame stepping uses 30 fps until browser-side frame-rate probing is added.",
+		`Selected local file: ${file.name}`,
+		"The source video has not been attached to the browser preview yet.",
+		"Episode Match is seeded from the filename; search and choose the canonical episode before saving.",
+		"Click Load Preview when you are ready to decode it for playback and cutting.",
 	].join("\n");
-	showToast("Local video loaded", "No upload needed.");
+	showToast("Local file selected", "Preview loading is paused.");
 }
 
 function releaseCurrentLocalObjectUrl() {
 	if (currentVideoObjectUrl) {
+		const objectUrl = currentVideoObjectUrl;
 		URL.revokeObjectURL(currentVideoObjectUrl);
 		currentVideoObjectUrl = null;
+
+		if (currentVideoSource && currentVideoSource.playbackSrc === objectUrl) {
+			currentVideoSource.playbackSrc = "";
+		}
 	}
 }
 
@@ -396,6 +509,7 @@ function resetEditorForNewVideo() {
 	timelineThumbnailRun += 1;
 	window.clearTimeout(timelineThumbnailRefreshTimer);
 	timelineThumbnailRefreshTimer = null;
+	cancelPendingTimelineScrubSeek();
 	timelineThumbnailsElement.replaceChildren();
 	timelineStatusElement.textContent = "Loading video metadata...";
 	timelineDurationElement.textContent = "00:00:00";
@@ -451,6 +565,7 @@ function handleMissingSelectedVideo(missingVideoSrc) {
 	sourceElement.removeAttribute("src");
 	videoElement.removeAttribute("src");
 	videoElement.load();
+	updateLocalPreviewButton();
 }
 
 async function populateIntroOutroSelects() {
@@ -527,7 +642,10 @@ async function loadCutlist(selectedVideoSrc) {
 		if (data.exists) {
 			statusElement.textContent = `Loaded cutlist from ${data.path}`;
 		} else {
-			statusElement.textContent = `No saved cutlist yet for ${selectedVideoSrc}`;
+			statusElement.textContent = [
+				`No saved cutlist yet for ${selectedVideoSrc}`,
+				"Episode Match is seeded from the filename; search and choose the canonical episode before saving.",
+			].join("\n");
 		}
 	} catch (error) {
 		console.error("Error loading cutlist:", error);
@@ -608,6 +726,12 @@ localVideoInput.addEventListener("change", () => {
 
 	selectLocalVideoFile(file);
 });
+
+loadLocalPreviewButton.addEventListener("click", () => {
+	loadSelectedLocalPreview();
+});
+
+loadLocalPreviewStageButton.addEventListener("click", loadSelectedLocalPreview);
 
 window.addEventListener("beforeunload", () => {
 	releaseCurrentLocalObjectUrl();
@@ -999,7 +1123,9 @@ function setupEventListeners(videoElement, frameRateFraction) {
 		});
 		toggleCutButton.addEventListener("click", handleToggleCut);
 		videoElement.addEventListener("loadedmetadata", updateViewerReadout);
+		videoElement.addEventListener("seeking", handlePrimaryVideoSeeking);
 		videoElement.addEventListener("seeked", updateViewerReadout);
+		videoElement.addEventListener("seeked", handlePrimaryVideoSeeked);
 		videoElement.addEventListener("timeupdate", updateViewerReadout);
 		videoElement.addEventListener("play", startPreviewSkipLoop);
 		videoElement.addEventListener("playing", startPreviewSkipLoop);
@@ -1072,6 +1198,16 @@ function updateViewerReadout() {
 	updateTimelinePlayhead();
 }
 
+function handlePrimaryVideoSeeking() {
+	cancelTimelineThumbnailWork();
+}
+
+function handlePrimaryVideoSeeked() {
+	if (!timelineScrubbing && shouldRefreshTimelineThumbnails()) {
+		scheduleTimelineThumbnailRefresh();
+	}
+}
+
 function updateCutlistDisplay() {
 	syncSelectionWithCutList();
 	cutlistElement.value = JSON.stringify(cutList, null, "\t");
@@ -1138,6 +1274,7 @@ timelineElement.addEventListener("pointerdown", (event) => {
 
 	timelineScrubbing = true;
 	timelineElement.setPointerCapture(event.pointerId);
+	cancelTimelineThumbnailWork();
 	scrubTimelineToPointer(event);
 });
 
@@ -1149,21 +1286,8 @@ timelineElement.addEventListener("pointermove", (event) => {
 	scrubTimelineToPointer(event);
 });
 
-timelineElement.addEventListener("pointerup", (event) => {
-	timelineScrubbing = false;
-
-	if (timelineElement.hasPointerCapture(event.pointerId)) {
-		timelineElement.releasePointerCapture(event.pointerId);
-	}
-});
-
-timelineElement.addEventListener("pointercancel", (event) => {
-	timelineScrubbing = false;
-
-	if (timelineElement.hasPointerCapture(event.pointerId)) {
-		timelineElement.releasePointerCapture(event.pointerId);
-	}
-});
+timelineElement.addEventListener("pointerup", finishTimelineScrub);
+timelineElement.addEventListener("pointercancel", finishTimelineScrub);
 
 timelineElement.addEventListener("wheel", handleTimelineWheel, { passive: false });
 
@@ -1283,6 +1407,30 @@ cutColorPickVideoButton.addEventListener("click", () => {
 	startVideoColorPick();
 });
 
+blurMaskDrawButton.addEventListener("click", () => {
+	startBlurMaskDrawing();
+});
+
+blurMaskClearLastButton.addEventListener("click", () => {
+	removeLastBlurShape();
+});
+
+blurMaskClearButton.addEventListener("click", () => {
+	clearBlurMask();
+});
+
+blurAmountInputElement.addEventListener("input", () => {
+	updateSelectedBlurMask({ amount: Number(blurAmountInputElement.value) }, { showMessage: false });
+});
+
+blurBrushSizeInputElement.addEventListener("input", () => {
+	renderBlurMaskCanvas();
+});
+
+blurToolSelectElement.addEventListener("change", () => {
+	renderBlurMaskCanvas();
+});
+
 cutReasonCategorySelectElement.addEventListener("change", () => {
 	populateCutReasonSubcategorySelect(cutReasonCategorySelectElement.value);
 	updateSelectedCutReason({
@@ -1321,11 +1469,21 @@ deleteCutButton.addEventListener("click", () => {
 });
 
 videoElement.addEventListener("pointerdown", handleVideoColorPickPointerDown, true);
+blurMaskCanvas.addEventListener("pointerdown", handleBlurMaskPointerDown);
+blurMaskCanvas.addEventListener("pointermove", handleBlurMaskPointerMove);
+blurMaskCanvas.addEventListener("pointerup", finishBlurMaskDrawing);
+blurMaskCanvas.addEventListener("pointercancel", cancelBlurMaskDraft);
 
 document.addEventListener("keydown", (event) => {
 	if (event.key === "Escape" && videoColorPickActive) {
 		stopVideoColorPick();
 		showToast("Video color pick canceled", "No replacement color was changed.", "warning");
+	}
+
+	if (event.key === "Escape" && blurMaskDrawingActive) {
+		stopBlurMaskDrawing();
+		cancelBlurMaskDraft();
+		showToast("Blur drawing canceled", "No blur area was changed.", "warning");
 	}
 });
 
@@ -1346,6 +1504,13 @@ async function setupTimeline(videoElement) {
 
 	if (!canUseTimeline()) {
 		timelineStatusElement.textContent = "Timeline is unavailable for this video.";
+		timelineElement.classList.remove("timeline--loading");
+		return;
+	}
+
+	if (!shouldRenderTimelineThumbnails()) {
+		renderTimelineThumbnailPlaceholders(timelineDuration);
+		timelineStatusElement.textContent = "Local thumbnails are paused. Drag the strip to scrub; use the range bar to change the visible span.";
 		timelineElement.classList.remove("timeline--loading");
 		return;
 	}
@@ -1383,7 +1548,13 @@ function setTimelineView(start, end, options = {}) {
 	updateTimelinePlayhead();
 
 	if (options.renderThumbnails !== false) {
-		renderTimelineThumbnails(getCurrentPlaybackSrc(), timelineDuration);
+		if (shouldRenderTimelineThumbnails()) {
+			renderTimelineThumbnails(getCurrentPlaybackSrc(), timelineDuration);
+		} else {
+			renderTimelineThumbnailPlaceholders(timelineDuration);
+		}
+	} else if (!shouldRenderTimelineThumbnails() && timelineThumbnailsElement.children.length === 0) {
+		renderTimelineThumbnailPlaceholders(timelineDuration);
 	}
 }
 
@@ -1568,12 +1739,35 @@ function getTimelineWheelDelta(event) {
 }
 
 function scheduleTimelineThumbnailRefresh() {
+	if (!shouldRenderTimelineThumbnails()) {
+		window.clearTimeout(timelineThumbnailRefreshTimer);
+		timelineThumbnailRefreshTimer = window.setTimeout(() => {
+			timelineThumbnailRefreshTimer = null;
+			renderTimelineThumbnailPlaceholders(timelineDuration);
+		}, TIMELINE_THUMBNAIL_REFRESH_DELAY);
+		return;
+	}
+
 	timelineThumbnailRun += 1;
 	window.clearTimeout(timelineThumbnailRefreshTimer);
 	timelineThumbnailRefreshTimer = window.setTimeout(() => {
 		timelineThumbnailRefreshTimer = null;
 		renderTimelineThumbnails(getCurrentPlaybackSrc(), timelineDuration);
 	}, TIMELINE_THUMBNAIL_REFRESH_DELAY);
+}
+
+function cancelTimelineThumbnailWork() {
+	timelineThumbnailRun += 1;
+	window.clearTimeout(timelineThumbnailRefreshTimer);
+	timelineThumbnailRefreshTimer = null;
+}
+
+function shouldRefreshTimelineThumbnails() {
+	return shouldRenderTimelineThumbnails()
+		&& (
+			timelineThumbnailsElement.children.length === 0
+			|| Array.from(timelineThumbnailsElement.children).some((thumbnail) => !thumbnail.querySelector("img"))
+		);
 }
 
 function updateTimelinePanState() {
@@ -1660,7 +1854,31 @@ function timelineProgressToTime(progress) {
 	return timelineViewStart + clamp(progress, 0, 1) * getTimelineViewDuration();
 }
 
+function shouldRenderTimelineThumbnails() {
+	return canUseTimeline()
+		&& (
+			LOCAL_THUMBNAILS_ENABLED
+			|| !currentVideoSource
+			|| currentVideoSource.type !== "local"
+		);
+}
+
+function renderTimelineThumbnailPlaceholders(duration) {
+	const thumbnailCount = getTimelineThumbnailCount();
+
+	timelineThumbnailsElement.replaceChildren();
+	for (let index = 0; index < thumbnailCount; index += 1) {
+		timelineThumbnailsElement.appendChild(createTimelineThumb(index, thumbnailCount, duration));
+	}
+}
+
 async function renderTimelineThumbnails(src, duration) {
+	if (!shouldRenderTimelineThumbnails()) {
+		renderTimelineThumbnailPlaceholders(duration);
+		timelineElement.classList.remove("timeline--loading");
+		return;
+	}
+
 	const runId = ++timelineThumbnailRun;
 	const thumbnailCount = getTimelineThumbnailCount();
 
@@ -1820,16 +2038,105 @@ function drawThumbnailFrame(thumbnailVideo, canvas) {
 	return canvas.toDataURL("image/jpeg", 0.72);
 }
 
-function scrubTimelineToPointer(event) {
+function scrubTimelineToPointer(event, options = {}) {
 	event.preventDefault();
 	const rect = timelineElement.getBoundingClientRect();
-	const progress = clamp((event.clientX - rect.left) / rect.width, 0, 1);
-	videoElement.currentTime = timelineProgressToTime(progress);
-	updateTimelinePlayhead();
+	const progress = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
+	const nextTime = timelineProgressToTime(clamp(progress, 0, 1));
+
+	updateTimelinePlayhead(nextTime);
+	queueTimelineScrubSeek(nextTime, options);
 }
 
-function updateTimelinePlayhead() {
-	const currentTime = Number.isFinite(videoElement.currentTime) ? videoElement.currentTime : 0;
+function finishTimelineScrub(event) {
+	if (!timelineScrubbing) {
+		return;
+	}
+
+	timelineScrubbing = false;
+	scrubTimelineToPointer(event, { exact: true });
+
+	if (timelineElement.hasPointerCapture(event.pointerId)) {
+		timelineElement.releasePointerCapture(event.pointerId);
+	}
+
+	if (shouldRefreshTimelineThumbnails()) {
+		scheduleTimelineThumbnailRefresh();
+	}
+}
+
+function queueTimelineScrubSeek(time, options = {}) {
+	if (!Number.isFinite(time)) {
+		return;
+	}
+
+	timelineScrubPendingTime = clamp(time, 0, timelineDuration || time);
+	timelineScrubPendingExact = timelineScrubPendingExact || options.exact === true;
+
+	if (options.exact && timelineScrubSeekTimer !== null) {
+		window.clearTimeout(timelineScrubSeekTimer);
+		timelineScrubSeekTimer = null;
+	}
+
+	if (timelineScrubSeekTimer !== null) {
+		return;
+	}
+
+	timelineScrubSeekTimer = window.setTimeout(flushTimelineScrubSeek, options.exact ? 0 : TIMELINE_SCRUB_SEEK_DELAY);
+}
+
+function flushTimelineScrubSeek() {
+	timelineScrubSeekTimer = null;
+
+	if (!Number.isFinite(timelineScrubPendingTime)) {
+		timelineScrubPendingExact = false;
+		return;
+	}
+
+	if (videoElement.seeking && !timelineScrubPendingExact) {
+		timelineScrubSeekTimer = window.setTimeout(flushTimelineScrubSeek, TIMELINE_SCRUB_SEEK_DELAY);
+		return;
+	}
+
+	const targetTime = timelineScrubPendingTime;
+	const exact = timelineScrubPendingExact;
+	timelineScrubPendingTime = null;
+	timelineScrubPendingExact = false;
+
+	if (!exact && Math.abs(videoElement.currentTime - targetTime) < TIMELINE_SCRUB_MIN_SEEK_DELTA) {
+		return;
+	}
+
+	seekTimelineVideo(targetTime, { fast: !exact });
+}
+
+function seekTimelineVideo(time, options = {}) {
+	const targetTime = clamp(time, 0, timelineDuration || time);
+
+	if (options.fast && typeof videoElement.fastSeek === "function") {
+		try {
+			videoElement.fastSeek(targetTime);
+			return;
+		} catch (error) {
+			console.debug("fastSeek unavailable, using precise seek.", error);
+		}
+	}
+
+	videoElement.currentTime = targetTime;
+}
+
+function cancelPendingTimelineScrubSeek() {
+	if (timelineScrubSeekTimer !== null) {
+		window.clearTimeout(timelineScrubSeekTimer);
+		timelineScrubSeekTimer = null;
+	}
+
+	timelineScrubPendingTime = null;
+	timelineScrubPendingExact = false;
+}
+
+function updateTimelinePlayhead(time = videoElement.currentTime) {
+	const currentTime = Number.isFinite(time) ? time : 0;
 	const isVisible = isTimeVisible(currentTime);
 	const progress = canUseTimeline() ? timeToTimelinePercent(currentTime) / 100 : 0;
 	const currentValue = Math.round(currentTime);
@@ -1909,6 +2216,7 @@ function normalizeCutRanges(cuts, duration) {
 			end: Number(cut.end),
 			mode: getCutMode(cut),
 			color: getCutColor(cut),
+			blur: getCutBlur(cut),
 			reason: getCutReason(cut),
 		}))
 		.filter((cut) => Number.isFinite(cut.start) && Number.isFinite(cut.end) && cut.end > cut.start)
@@ -1918,6 +2226,7 @@ function normalizeCutRanges(cuts, duration) {
 			end: clamp(cut.end, 0, duration),
 			mode: cut.mode,
 			color: cut.color,
+			blur: cut.blur,
 			reason: cut.reason,
 		}))
 		.filter((cut) => cut.end > cut.start);
@@ -1930,6 +2239,10 @@ function getCutMarkerTitle(cut) {
 
 	if (getCutMode(cut) === CUT_MODE_REPLACE) {
 		return `Cut ${cut.index + 1}: ${reasonPrefix}replace video with ${getCutColor(cut)} from ${timeRange}; audio preserved`;
+	}
+
+	if (getCutMode(cut) === CUT_MODE_BLUR) {
+		return `Cut ${cut.index + 1}: ${reasonPrefix}blur selected area from ${timeRange}; audio preserved`;
 	}
 
 	return `Cut ${cut.index + 1}: ${reasonPrefix}remove ${timeRange}`;
@@ -2020,6 +2333,7 @@ function selectCut(cutIndex, options = {}) {
 	updateSelectedCutHandleClasses();
 	updateCutOptionsEditor();
 	updateCutPointEditor();
+	renderBlurMaskCanvas();
 }
 
 function selectCutPoint(cutIndex, edge, options = {}) {
@@ -2040,6 +2354,7 @@ function selectCutPoint(cutIndex, edge, options = {}) {
 	updateSelectedCutHandleClasses();
 	updateCutOptionsEditor();
 	updateCutPointEditor();
+	renderBlurMaskCanvas();
 }
 
 function clearSelectedCutPoint() {
@@ -2054,6 +2369,7 @@ function clearSelectedCut() {
 	selectedCutPoint = null;
 	activeCutPointDrag = null;
 	stopVideoColorPick();
+	stopBlurMaskDrawing();
 	updateSelectedCutHandleClasses();
 	hideCutPointEditor();
 	hideCutOptionsEditor();
@@ -2137,14 +2453,15 @@ function updateCutOptionsEditor() {
 	const mode = getCutMode(cut);
 	const color = getCutColor(cut);
 	const isReplaceMode = mode === CUT_MODE_REPLACE;
+	const isBlurMode = mode === CUT_MODE_BLUR;
+	const blur = getCutBlur(cut);
 	const reason = getCutReason(cut) || {};
 	const reasonSummary = getCutReasonSummary(reason);
-	const actionSummary = isReplaceMode
-		? `Replace video with ${color}; keep audio`
-		: "Remove from final edit";
+	const actionSummary = getCutActionSummary(cut);
 
 	cutOptionsEditorElement.hidden = false;
 	cutOptionsEditorElement.classList.toggle("is-remove", !isReplaceMode);
+	cutOptionsEditorElement.classList.toggle("is-blur", isBlurMode);
 	cutOptionsLabelElement.textContent = `Cut ${selectedCutIndex + 1} options`;
 	cutOptionsSummaryElement.textContent = reasonSummary
 		? `${reasonSummary} | ${actionSummary}`
@@ -2152,8 +2469,13 @@ function updateCutOptionsEditor() {
 	cutActionSelectElement.value = mode;
 	cutColorInputElement.value = color;
 	cutColorInputElement.disabled = !isReplaceMode;
-	cutColorPickVideoButton.disabled = !hasCurrentVideo();
+	cutColorPickVideoButton.disabled = !isReplaceMode || !hasLoadedCurrentVideoPreview();
 	cutColorSwatchElement.style.backgroundColor = color;
+	blurMaskEditorElement.hidden = !isBlurMode;
+	blurMaskDrawButton.disabled = !isBlurMode || !hasLoadedCurrentVideoPreview();
+	blurAmountInputElement.value = String(blur.amount);
+	blurMaskClearLastButton.disabled = !blur.shapes.length;
+	blurMaskClearButton.disabled = !blur.shapes.length;
 	cutReasonCategorySelectElement.value = reason.category || "";
 	populateCutReasonSubcategorySelect(reason.category, reason.subcategory);
 	cutReasonNoteInputElement.value = reason.note || "";
@@ -2164,6 +2486,8 @@ function updateCutOptionsEditor() {
 
 function hideCutOptionsEditor() {
 	cutOptionsEditorElement.hidden = true;
+	stopBlurMaskDrawing();
+	renderBlurMaskCanvas();
 }
 
 function updateSelectedCutOptions(changes, options = {}) {
@@ -2192,15 +2516,23 @@ function updateSelectedCutOptions(changes, options = {}) {
 		}
 
 		cut.color = color;
+		delete cut.blur;
+	} else if (mode === CUT_MODE_BLUR) {
+		cut.blur = normalizeBlurMask(changes.blur || cut.blur || createDefaultBlurMask());
+		delete cut.color;
 	} else {
 		delete cut.color;
+		delete cut.blur;
 	}
 
 	updateCutlistDisplay();
+	renderBlurMaskCanvas();
 
 	if (options.showMessage) {
 		if (mode === CUT_MODE_REPLACE) {
 			showToast("Cut will keep audio", `Video will be replaced with ${cut.color}.`);
+		} else if (mode === CUT_MODE_BLUR) {
+			showToast("Cut will blur selected areas", "Use Draw Area to choose what gets blurred.");
 		} else {
 			showToast("Cut will be removed", "This range will be left out of the final edit.");
 		}
@@ -2322,6 +2654,7 @@ function finishCutListMutation(nextSelectedIndex, options = {}) {
 	selectedCutPoint = null;
 	activeCutPointDrag = null;
 	stopVideoColorPick();
+	stopBlurMaskDrawing();
 
 	if (nextSelectedIndex !== null) {
 		const selectedCut = cutList[nextSelectedIndex];
@@ -2446,16 +2779,522 @@ function rgbToHex(red, green, blue) {
 		.join("")}`;
 }
 
+function startBlurMaskDrawing() {
+	if (selectedCutIndex === null) {
+		showToast("Choose a cut first", "Click a cut range or one of its handles.", "warning");
+		return;
+	}
+
+	if (getCutMode(cutList[selectedCutIndex]) !== CUT_MODE_BLUR) {
+		updateSelectedCutOptions({ mode: CUT_MODE_BLUR }, { showMessage: false });
+	}
+
+	if (!videoElement.videoWidth || !videoElement.videoHeight || videoElement.readyState < 2) {
+		showToast("Video frame unavailable", "Wait for the video frame to load, then try again.", "warning");
+		return;
+	}
+
+	stopVideoColorPick();
+	blurMaskDrawingActive = true;
+	document.body.classList.add("blur-mask-drawing");
+	syncBlurCanvasSize();
+	renderBlurMaskCanvas();
+	showToast("Draw blur area", `Use the ${blurToolSelectElement.value} tool on the video frame.`);
+}
+
+function stopBlurMaskDrawing() {
+	blurMaskDrawingActive = false;
+	activeBlurMaskDraft = null;
+	document.body.classList.remove("blur-mask-drawing");
+	renderBlurMaskCanvas();
+}
+
+function handleBlurMaskPointerDown(event) {
+	if (!blurMaskDrawingActive || selectedCutIndex === null) {
+		return;
+	}
+
+	const point = getNormalizedVideoPoint(event);
+
+	if (!point) {
+		showToast("Draw inside the frame", "Start inside the displayed video image.", "warning");
+		return;
+	}
+
+	event.preventDefault();
+	event.stopPropagation();
+	blurMaskCanvas.setPointerCapture(event.pointerId);
+
+	const tool = blurToolSelectElement.value;
+	activeBlurMaskDraft = {
+		pointerId: event.pointerId,
+		tool,
+		start: point,
+		points: [point],
+	};
+	renderBlurMaskCanvas();
+}
+
+function handleBlurMaskPointerMove(event) {
+	if (!activeBlurMaskDraft || activeBlurMaskDraft.pointerId !== event.pointerId) {
+		return;
+	}
+
+	const point = getNormalizedVideoPoint(event);
+
+	if (!point) {
+		return;
+	}
+
+	event.preventDefault();
+	event.stopPropagation();
+
+	if (activeBlurMaskDraft.tool === "rectangle") {
+		activeBlurMaskDraft.end = point;
+	} else {
+		activeBlurMaskDraft.points.push(point);
+	}
+
+	renderBlurMaskCanvas();
+}
+
+function finishBlurMaskDrawing(event) {
+	if (!activeBlurMaskDraft || activeBlurMaskDraft.pointerId !== event.pointerId) {
+		return;
+	}
+
+	event.preventDefault();
+	event.stopPropagation();
+
+	const shape = createBlurShapeFromDraft(activeBlurMaskDraft);
+	activeBlurMaskDraft = null;
+
+	if (!shape) {
+		renderBlurMaskCanvas();
+		return;
+	}
+
+	addBlurShape(shape);
+}
+
+function cancelBlurMaskDraft() {
+	activeBlurMaskDraft = null;
+	renderBlurMaskCanvas();
+}
+
+function createBlurShapeFromDraft(draft) {
+	if (draft.tool === "rectangle") {
+		const start = draft.start;
+		const end = draft.end || draft.points[draft.points.length - 1] || start;
+		const x = Math.min(start.x, end.x);
+		const y = Math.min(start.y, end.y);
+		const width = Math.abs(end.x - start.x);
+		const height = Math.abs(end.y - start.y);
+
+		if (width < 0.01 || height < 0.01) {
+			showToast("Area too small", "Drag a larger rectangle to blur.", "warning");
+			return null;
+		}
+
+		return { tool: "rectangle", rect: { x, y, width, height } };
+	}
+
+	const points = simplifyBlurPoints(draft.points);
+
+	if (draft.tool === "lasso") {
+		if (points.length < 3) {
+			showToast("Lasso too small", "Draw a larger enclosed area.", "warning");
+			return null;
+		}
+
+		return { tool: "lasso", points };
+	}
+
+	if (!points.length) {
+		return null;
+	}
+
+	return {
+		tool: "brush",
+		points,
+		brushSize: Number(blurBrushSizeInputElement.value) / Math.max(videoElement.videoWidth || 1280, videoElement.videoHeight || 720),
+	};
+}
+
+function simplifyBlurPoints(points) {
+	const simplified = [];
+
+	points.forEach((point) => {
+		const previous = simplified[simplified.length - 1];
+
+		if (!previous || Math.hypot(point.x - previous.x, point.y - previous.y) >= 0.004) {
+			simplified.push(point);
+		}
+	});
+
+	return simplified;
+}
+
+function addBlurShape(shape) {
+	if (!readEditableCutListForSelectedCut()) {
+		return;
+	}
+
+	const cut = cutList[selectedCutIndex];
+	const blur = normalizeBlurMask(cut.blur || createDefaultBlurMask());
+
+	blur.shapes.push(shape);
+	cut.mode = CUT_MODE_BLUR;
+	cut.blur = normalizeBlurMask(blur);
+	updateCutlistDisplay();
+	renderBlurMaskCanvas();
+	showToast("Blur area added", `${blur.shapes.length} selected area${blur.shapes.length === 1 ? "" : "s"} on this cut.`);
+}
+
+function updateSelectedBlurMask(changes, options = {}) {
+	if (selectedCutIndex === null || getCutMode(cutList[selectedCutIndex]) !== CUT_MODE_BLUR) {
+		return;
+	}
+
+	if (!readEditableCutListForSelectedCut()) {
+		return;
+	}
+
+	const cut = cutList[selectedCutIndex];
+	cut.blur = normalizeBlurMask({
+		...createDefaultBlurMask(),
+		...(cut.blur || {}),
+		...changes,
+	});
+	updateCutlistDisplay();
+	renderBlurMaskCanvas();
+
+	if (options.showMessage) {
+		showToast("Blur updated", "Selected blur settings were changed.");
+	}
+}
+
+function removeLastBlurShape() {
+	if (selectedCutIndex === null || getCutMode(cutList[selectedCutIndex]) !== CUT_MODE_BLUR) {
+		return;
+	}
+
+	const blur = getCutBlur(cutList[selectedCutIndex]);
+
+	if (!blur.shapes.length) {
+		return;
+	}
+
+	blur.shapes.pop();
+	updateSelectedBlurMask({ shapes: blur.shapes }, { showMessage: true });
+}
+
+function clearBlurMask() {
+	if (selectedCutIndex === null || getCutMode(cutList[selectedCutIndex]) !== CUT_MODE_BLUR) {
+		return;
+	}
+
+	updateSelectedBlurMask({ shapes: [] }, { showMessage: true });
+}
+
+function getNormalizedVideoPoint(event) {
+	const frame = getVideoFrameRect();
+
+	if (!frame) {
+		return null;
+	}
+
+	const relativeX = event.clientX - frame.left;
+	const relativeY = event.clientY - frame.top;
+
+	if (relativeX < 0 || relativeY < 0 || relativeX > frame.width || relativeY > frame.height) {
+		return null;
+	}
+
+	return {
+		x: clamp(relativeX / frame.width, 0, 1),
+		y: clamp(relativeY / frame.height, 0, 1),
+	};
+}
+
+function getVideoFrameRect() {
+	const rect = videoElement.getBoundingClientRect();
+	const videoWidth = videoElement.videoWidth;
+	const videoHeight = videoElement.videoHeight;
+
+	if (!rect.width || !rect.height || !videoWidth || !videoHeight) {
+		return null;
+	}
+
+	const elementRatio = rect.width / rect.height;
+	const videoRatio = videoWidth / videoHeight;
+	let width = rect.width;
+	let height = rect.height;
+	let left = rect.left;
+	let top = rect.top;
+
+	if (elementRatio > videoRatio) {
+		height = rect.height;
+		width = height * videoRatio;
+		left += (rect.width - width) / 2;
+	} else {
+		width = rect.width;
+		height = width / videoRatio;
+		top += (rect.height - height) / 2;
+	}
+
+	return { left, top, width, height };
+}
+
+function syncBlurCanvasSize() {
+	const rect = videoStageElement.getBoundingClientRect();
+	const width = Math.max(1, Math.round(rect.width));
+	const height = Math.max(1, Math.round(rect.height));
+
+	if (blurMaskCanvas.width !== width || blurMaskCanvas.height !== height) {
+		blurMaskCanvas.width = width;
+		blurMaskCanvas.height = height;
+	}
+}
+
+function renderBlurMaskCanvas() {
+	if (!blurMaskCanvas) {
+		return;
+	}
+
+	syncBlurCanvasSize();
+
+	const context = blurMaskCanvas.getContext("2d");
+	context.clearRect(0, 0, blurMaskCanvas.width, blurMaskCanvas.height);
+
+	if (selectedCutIndex === null || !cutList[selectedCutIndex] || getCutMode(cutList[selectedCutIndex]) !== CUT_MODE_BLUR) {
+		return;
+	}
+
+	const frame = getCanvasVideoFrameRect();
+
+	if (!frame) {
+		return;
+	}
+
+	const blur = getCutBlur(cutList[selectedCutIndex]);
+	context.fillStyle = "rgba(15, 118, 110, 0.24)";
+	context.strokeStyle = "rgba(255, 255, 255, 0.9)";
+	context.lineWidth = 2;
+	blur.shapes.forEach((shape) => drawBlurShapeOnContext(context, shape, frame));
+
+	if (activeBlurMaskDraft) {
+		context.setLineDash([6, 4]);
+		drawBlurShapeOnContext(context, createPreviewShapeFromDraft(activeBlurMaskDraft), frame);
+		context.setLineDash([]);
+	}
+}
+
+function getCanvasVideoFrameRect() {
+	const frame = getVideoFrameRect();
+	const stageRect = videoStageElement.getBoundingClientRect();
+
+	if (!frame || !stageRect.width || !stageRect.height) {
+		return null;
+	}
+
+	return {
+		x: frame.left - stageRect.left,
+		y: frame.top - stageRect.top,
+		width: frame.width,
+		height: frame.height,
+	};
+}
+
+function createPreviewShapeFromDraft(draft) {
+	if (draft.tool === "rectangle") {
+		const start = draft.start;
+		const end = draft.end || draft.start;
+		return {
+			tool: "rectangle",
+			rect: {
+				x: Math.min(start.x, end.x),
+				y: Math.min(start.y, end.y),
+				width: Math.abs(end.x - start.x),
+				height: Math.abs(end.y - start.y),
+			},
+		};
+	}
+
+	if (draft.tool === "lasso") {
+		return { tool: "lasso", points: draft.points };
+	}
+
+	return {
+		tool: "brush",
+		points: draft.points,
+		brushSize: Number(blurBrushSizeInputElement.value) / Math.max(videoElement.videoWidth || 1280, videoElement.videoHeight || 720),
+	};
+}
+
+function drawBlurShapeOnContext(context, shape, frame) {
+	if (!shape) {
+		return;
+	}
+
+	context.beginPath();
+
+	if (shape.tool === "rectangle" && shape.rect) {
+		const rect = shape.rect;
+		context.rect(
+			frame.x + rect.x * frame.width,
+			frame.y + rect.y * frame.height,
+			rect.width * frame.width,
+			rect.height * frame.height
+		);
+		context.fill();
+		context.stroke();
+		return;
+	}
+
+	if (shape.tool === "lasso" && shape.points && shape.points.length) {
+		shape.points.forEach((point, index) => {
+			const x = frame.x + point.x * frame.width;
+			const y = frame.y + point.y * frame.height;
+			if (index === 0) {
+				context.moveTo(x, y);
+			} else {
+				context.lineTo(x, y);
+			}
+		});
+		context.closePath();
+		context.fill();
+		context.stroke();
+		return;
+	}
+
+	if (shape.tool === "brush" && shape.points && shape.points.length) {
+		context.lineCap = "round";
+		context.lineJoin = "round";
+		context.lineWidth = Math.max(4, (shape.brushSize || DEFAULT_BLUR_BRUSH_SIZE) * Math.max(frame.width, frame.height));
+		context.strokeStyle = "rgba(15, 118, 110, 0.42)";
+		shape.points.forEach((point, index) => {
+			const x = frame.x + point.x * frame.width;
+			const y = frame.y + point.y * frame.height;
+			if (index === 0) {
+				context.moveTo(x, y);
+			} else {
+				context.lineTo(x, y);
+			}
+		});
+		context.stroke();
+		context.strokeStyle = "rgba(255, 255, 255, 0.9)";
+		context.lineWidth = 2;
+	}
+}
+
 function getCutMode(cut) {
-	return cut && cut.mode === CUT_MODE_REPLACE ? CUT_MODE_REPLACE : CUT_MODE_REMOVE;
+	if (cut && cut.mode === CUT_MODE_REPLACE) {
+		return CUT_MODE_REPLACE;
+	}
+
+	if (cut && cut.mode === CUT_MODE_BLUR) {
+		return CUT_MODE_BLUR;
+	}
+
+	return CUT_MODE_REMOVE;
 }
 
 function normalizeCutMode(mode) {
-	return mode === CUT_MODE_REPLACE ? CUT_MODE_REPLACE : CUT_MODE_REMOVE;
+	if (mode === CUT_MODE_REPLACE) {
+		return CUT_MODE_REPLACE;
+	}
+
+	if (mode === CUT_MODE_BLUR) {
+		return CUT_MODE_BLUR;
+	}
+
+	return CUT_MODE_REMOVE;
 }
 
 function getCutColor(cut) {
 	return normalizeHexColor(cut && cut.color) || DEFAULT_REPLACEMENT_COLOR;
+}
+
+function getCutBlur(cut) {
+	return normalizeBlurMask(cut && cut.blur);
+}
+
+function createDefaultBlurMask() {
+	return {
+		amount: DEFAULT_BLUR_AMOUNT,
+		shapes: [],
+	};
+}
+
+function normalizeBlurMask(blur) {
+	const amount = clamp(Math.round(Number(blur && blur.amount) || DEFAULT_BLUR_AMOUNT), 2, 64);
+	const shapes = Array.isArray(blur && blur.shapes)
+		? blur.shapes.map(normalizeBlurShape).filter(Boolean)
+		: [];
+
+	return { amount, shapes };
+}
+
+function normalizeBlurShape(shape) {
+	if (!shape || typeof shape !== "object") {
+		return null;
+	}
+
+	if (shape.tool === "rectangle" && shape.rect) {
+		const x = clamp(Number(shape.rect.x) || 0, 0, 1);
+		const y = clamp(Number(shape.rect.y) || 0, 0, 1);
+		const width = clamp(Number(shape.rect.width) || 0, 0, 1 - x);
+		const height = clamp(Number(shape.rect.height) || 0, 0, 1 - y);
+		return width > 0 && height > 0 ? { tool: "rectangle", rect: { x, y, width, height } } : null;
+	}
+
+	if (shape.tool === "lasso") {
+		const points = normalizeBlurPoints(shape.points);
+		return points.length >= 3 ? { tool: "lasso", points } : null;
+	}
+
+	if (shape.tool === "brush") {
+		const points = normalizeBlurPoints(shape.points);
+		const brushSize = clamp(Number(shape.brushSize) || DEFAULT_BLUR_BRUSH_SIZE, 0.005, 0.35);
+		return points.length ? { tool: "brush", points, brushSize } : null;
+	}
+
+	return null;
+}
+
+function normalizeBlurPoints(points) {
+	if (!Array.isArray(points)) {
+		return [];
+	}
+
+	return points
+		.map((point) => {
+			if (!point || typeof point !== "object") {
+				return null;
+			}
+
+			return {
+				x: clamp(Number(point.x) || 0, 0, 1),
+				y: clamp(Number(point.y) || 0, 0, 1),
+			};
+		})
+		.filter(Boolean);
+}
+
+function getCutActionSummary(cut) {
+	const mode = getCutMode(cut);
+
+	if (mode === CUT_MODE_REPLACE) {
+		return `Replace video with ${getCutColor(cut)}; keep audio`;
+	}
+
+	if (mode === CUT_MODE_BLUR) {
+		const blur = getCutBlur(cut);
+		return `Blur ${blur.shapes.length || "selected"} area${blur.shapes.length === 1 ? "" : "s"}; keep audio`;
+	}
+
+	return "Remove from final edit";
 }
 
 function normalizeHexColor(color) {
@@ -2842,8 +3681,8 @@ function showToast(title, message = "", type = "success") {
 }
 
 saveCutlistButton.addEventListener("click", async () => {
-	if (!hasCurrentVideo()) {
-		showToast("Choose a video first", "Pick a source video before saving a cutlist.", "warning");
+	if (!hasLoadedCurrentVideoPreview()) {
+		showToast("Load preview first", "Load the local preview before saving a cutlist.", "warning");
 		return;
 	}
 
@@ -3053,8 +3892,13 @@ async function runClientSideEdit() {
 
 	const duration = getCurrentVideoDuration();
 	const keepRanges = getKeepRangesForExport(cutList, duration);
+	const replacementSegments = getReplacementExportSegments(cutList, duration);
+	const exportSegments = replacementSegments.length
+		? replacementSegments
+		: keepRanges.map((range) => ({ type: "video", start: range.start, end: range.end }));
+	const shouldRenderReplacementSegments = exportSegments.some((segment) => segment.type === "color" || segment.type === "blur");
 
-	if (!keepRanges.length) {
+	if (!keepRanges.length && !replacementSegments.length) {
 		throw new Error("Every part of the video is marked for removal. Leave at least one range in the final edit.");
 	}
 
@@ -3066,53 +3910,49 @@ async function runClientSideEdit() {
 	const segmentNames = [];
 
 	try {
+		clientFfmpegLogs = [];
 		updateEditProgress({ percent: 16, message: "Reading source video locally..." });
 		await ffmpeg.writeFile(inputName, await fetchFile(getFfmpegInputSource()));
 
-		if (shouldCopyWholeVideo(keepRanges, duration)) {
-			clientExportProgress = { start: 18, end: 88, message: "Copying video locally..." };
-			await ffmpeg.exec(["-i", inputName, "-map", "0:v:0", "-map", "0:a?", "-c", "copy", outputName]);
-		} else {
-			for (let index = 0; index < keepRanges.length; index += 1) {
-				const range = keepRanges[index];
+		if (shouldRenderReplacementSegments || !shouldCopyWholeVideo(keepRanges, duration)) {
+			const videoInfo = getClientExportVideoInfo();
+
+			for (let index = 0; index < exportSegments.length; index += 1) {
+				const segment = exportSegments[index];
 				const segmentName = `${exportId}-segment-${String(index).padStart(3, "0")}.mp4`;
-				const segmentStartPercent = 18 + (index / keepRanges.length) * 56;
-				const segmentEndPercent = 18 + ((index + 1) / keepRanges.length) * 56;
+				const segmentStartPercent = 18 + (index / exportSegments.length) * 60;
+				const segmentEndPercent = 18 + ((index + 1) / exportSegments.length) * 60;
+				const segmentLabel = segment.type === "color"
+					? "Replacing video with color"
+					: segment.type === "blur"
+						? "Blurring selected area"
+						: "Creating video segment";
 
 				segmentNames.push(segmentName);
 				clientExportProgress = {
 					start: segmentStartPercent,
 					end: segmentEndPercent,
-					message: `Creating segment ${index + 1}/${keepRanges.length}...`,
+					message: `${segmentLabel} ${index + 1}/${exportSegments.length}...`,
 				};
 				updateSegmentProgress({
-					percent: (index / keepRanges.length) * 100,
-					message: `Segment ${index + 1}/${keepRanges.length}`,
+					percent: (index / exportSegments.length) * 100,
+					message: `Segment ${index + 1}/${exportSegments.length}`,
 				});
-				await ffmpeg.exec([
-					"-i",
-					inputName,
-					"-ss",
-					formatFfmpegSeconds(range.start),
-					"-t",
-					formatFfmpegSeconds(range.end - range.start),
-					"-map",
-					"0:v:0",
-					"-map",
-					"0:a?",
-					"-c",
-					"copy",
-					"-avoid_negative_ts",
-					"make_zero",
-					segmentName,
-				]);
+				if (segment.type === "blur") {
+					await ffmpeg.writeFile(`${segmentName}.mask.pgm`, createBlurMaskPgm(segment.blur, videoInfo.width, videoInfo.height));
+				}
+				await runFfmpegCommand(
+					ffmpeg,
+					createReplacementSegmentCommand(inputName, segmentName, segment, videoInfo),
+					`Segment ${index + 1}/${exportSegments.length}`
+				);
 			}
 
 			updateSegmentProgress({ percent: 100, message: "Segments ready" });
-			updateEditProgress({ percent: 78, message: "Joining segments locally..." });
+			updateEditProgress({ percent: 80, message: "Joining segments locally..." });
 			await ffmpeg.writeFile(`${exportId}-segments.txt`, new TextEncoder().encode(createConcatList(segmentNames)));
-			clientExportProgress = { start: 78, end: 92, message: "Joining segments locally..." };
-			await ffmpeg.exec([
+			clientExportProgress = { start: 80, end: 92, message: "Joining segments locally..." };
+			await runFfmpegCommand(ffmpeg, [
 				"-f",
 				"concat",
 				"-safe",
@@ -3122,7 +3962,10 @@ async function runClientSideEdit() {
 				"-c",
 				"copy",
 				outputName,
-			]);
+			], "Joining segments");
+		} else if (shouldCopyWholeVideo(keepRanges, duration)) {
+			clientExportProgress = { start: 18, end: 88, message: "Copying video locally..." };
+			await runFfmpegCommand(ffmpeg, ["-i", inputName, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", outputName], "Copying video");
 		}
 
 		clientExportProgress = null;
@@ -3140,18 +3983,13 @@ async function runClientSideEdit() {
 			outputName,
 			`${exportId}-segments.txt`,
 			...segmentNames,
+			...segmentNames.map((name) => `${name}.mask.pgm`),
 		]);
 	}
 }
 
 function getClientExportUnsupportedReasons() {
 	const reasons = [];
-	const normalizedCuts = normalizeCutRanges(cutList, getCurrentVideoDuration());
-	const replacementCutCount = normalizedCuts.filter((cut) => cut.mode === CUT_MODE_REPLACE).length;
-
-	if (replacementCutCount) {
-		reasons.push(`${replacementCutCount} color replacement ${replacementCutCount === 1 ? "cut is" : "cuts are"} present`);
-	}
 
 	if (introSelect.value || outroSelect.value) {
 		reasons.push("intro/outro concatenation is selected");
@@ -3172,6 +4010,8 @@ async function loadFfmpegTools() {
 
 			ffmpeg.on("log", ({ message }) => {
 				if (message) {
+					clientFfmpegLogs.push(message);
+					clientFfmpegLogs = clientFfmpegLogs.slice(-80);
 					console.debug("[ffmpeg]", message);
 				}
 			});
@@ -3228,6 +4068,37 @@ async function fetchFile(input) {
 	return new Uint8Array(await response.arrayBuffer());
 }
 
+async function runFfmpegCommand(ffmpeg, args, label) {
+	const exitCode = await ffmpeg.exec(args);
+
+	if (exitCode === 0) {
+		return;
+	}
+
+	const recentLog = getRecentFfmpegLogSummary();
+	throw new Error(`${label} failed in FFmpeg.${recentLog ? `\n\n${recentLog}` : ""}`);
+}
+
+function getRecentFfmpegLogSummary() {
+	const importantLines = clientFfmpegLogs
+		.filter((line) => {
+			const normalized = line.toLowerCase();
+			return normalized.includes("error")
+				|| normalized.includes("failed")
+				|| normalized.includes("invalid")
+				|| normalized.includes("not found")
+				|| normalized.includes("impossible")
+				|| normalized.includes("unknown")
+				|| normalized.includes("unsupported")
+				|| normalized.includes("aborted");
+		})
+		.slice(-8);
+
+	const lines = importantLines.length ? importantLines : clientFfmpegLogs.slice(-8);
+
+	return lines.length ? `Recent FFmpeg output:\n${lines.join("\n")}` : "";
+}
+
 function getFfmpegInputSource() {
 	if (!currentVideoSource) {
 		throw new Error("Choose a video first.");
@@ -3279,6 +4150,279 @@ function getKeepRangesForExport(cuts, duration) {
 	return keepRanges.filter((range) => range.end - range.start > CUT_POINT_MIN_GAP);
 }
 
+function getReplacementExportSegments(cuts, duration) {
+	const segments = [];
+	let cursor = 0;
+
+	normalizeCutRanges(cuts, duration)
+		.sort((a, b) => a.start - b.start)
+		.forEach((cut) => {
+			const effectiveStart = Math.max(cut.start, cursor);
+
+			if (cut.start > cursor + CUT_POINT_MIN_GAP) {
+				segments.push({ type: "video", start: cursor, end: cut.start });
+			}
+
+			if (cut.end > cursor + CUT_POINT_MIN_GAP && cut.mode === CUT_MODE_REPLACE) {
+				segments.push({
+					type: "color",
+					start: effectiveStart,
+					end: cut.end,
+					color: cut.color || DEFAULT_REPLACEMENT_COLOR,
+				});
+			} else if (cut.end > cursor + CUT_POINT_MIN_GAP && cut.mode === CUT_MODE_BLUR) {
+				segments.push({
+					type: "blur",
+					start: effectiveStart,
+					end: cut.end,
+					blur: cut.blur || createDefaultBlurMask(),
+				});
+			}
+
+			cursor = Math.max(cursor, cut.end);
+		});
+
+	if (cursor < duration - CUT_POINT_MIN_GAP) {
+		segments.push({ type: "video", start: cursor, end: duration });
+	}
+
+	return segments.filter((segment) => segment.end - segment.start > CUT_POINT_MIN_GAP);
+}
+
+function getClientExportVideoInfo() {
+	return {
+		width: videoElement.videoWidth || 1280,
+		height: videoElement.videoHeight || 720,
+		frameRate: Number.isFinite(activeFrameRate) && activeFrameRate > 0
+			? activeFrameRate
+			: DEFAULT_LOCAL_FRAME_RATE,
+	};
+}
+
+function createReplacementSegmentCommand(inputName, outputName, segment, videoInfo) {
+	const duration = formatFfmpegSeconds(segment.end - segment.start);
+	const encodeOptions = [
+		"-c:v",
+		"libx264",
+		"-preset",
+		"ultrafast",
+		"-pix_fmt",
+		"yuv420p",
+		"-c:a",
+		"aac",
+	];
+
+	if (segment.type === "color") {
+		return [
+			"-ss",
+			formatFfmpegSeconds(segment.start),
+			"-t",
+			duration,
+			"-i",
+			inputName,
+			"-f",
+			"lavfi",
+			"-i",
+			createColorFilter(segment, videoInfo),
+			"-map",
+			"1:v:0",
+			"-map",
+			"0:a:0?",
+			"-t",
+			duration,
+			"-shortest",
+			...encodeOptions,
+			outputName,
+		];
+	}
+
+	if (segment.type === "blur") {
+		const maskName = `${outputName}.mask.pgm`;
+		return createBlurSegmentCommand(inputName, outputName, maskName, segment, videoInfo);
+	}
+
+	return [
+		"-i",
+		inputName,
+		"-ss",
+		formatFfmpegSeconds(segment.start),
+		"-t",
+		duration,
+		"-map",
+		"0:v:0",
+		"-map",
+		"0:a:0?",
+		...encodeOptions,
+		"-avoid_negative_ts",
+		"make_zero",
+		outputName,
+	];
+}
+
+function createBlurSegmentCommand(inputName, outputName, maskName, segment, videoInfo) {
+	const duration = formatFfmpegSeconds(segment.end - segment.start);
+	const blurAmount = Math.max(2, Math.min(64, Math.round(segment.blur && segment.blur.amount || DEFAULT_BLUR_AMOUNT)));
+
+	return [
+		"-ss",
+		formatFfmpegSeconds(segment.start),
+		"-t",
+		duration,
+		"-i",
+		inputName,
+		"-loop",
+		"1",
+		"-i",
+		maskName,
+		"-filter_complex",
+		`[0:v]split[base][blurbase];[blurbase]boxblur=${blurAmount}:1[blurred];[1:v]format=gray,scale=${Math.round(videoInfo.width)}:${Math.round(videoInfo.height)}[mask];[blurred][mask]alphamerge[blurredalpha];[base][blurredalpha]overlay=0:0,format=yuv420p[v]`,
+		"-map",
+		"[v]",
+		"-map",
+		"0:a:0?",
+		"-t",
+		duration,
+		"-c:v",
+		"libx264",
+		"-preset",
+		"ultrafast",
+		"-pix_fmt",
+		"yuv420p",
+		"-c:a",
+		"aac",
+		"-shortest",
+		outputName,
+	];
+}
+
+function createBlurMaskPgm(blur, width, height) {
+	const maskWidth = Math.max(2, Math.round(width || 1280));
+	const maskHeight = Math.max(2, Math.round(height || 720));
+	const pixels = new Uint8Array(maskWidth * maskHeight);
+	const normalizedBlur = normalizeBlurMask(blur);
+
+	normalizedBlur.shapes.forEach((shape) => {
+		if (shape.tool === "rectangle" && shape.rect) {
+			fillMaskRect(pixels, maskWidth, maskHeight, shape.rect);
+		} else if (shape.tool === "lasso" && shape.points) {
+			fillMaskPolygon(pixels, maskWidth, maskHeight, shape.points);
+		} else if (shape.tool === "brush" && shape.points) {
+			fillMaskBrush(pixels, maskWidth, maskHeight, shape);
+		}
+	});
+
+	const header = new TextEncoder().encode(`P5\n${maskWidth} ${maskHeight}\n255\n`);
+	const file = new Uint8Array(header.length + pixels.length);
+	file.set(header, 0);
+	file.set(pixels, header.length);
+	return file;
+}
+
+function fillMaskRect(pixels, width, height, rect) {
+	const x1 = Math.floor(rect.x * width);
+	const y1 = Math.floor(rect.y * height);
+	const x2 = Math.ceil((rect.x + rect.width) * width);
+	const y2 = Math.ceil((rect.y + rect.height) * height);
+
+	for (let y = clamp(y1, 0, height - 1); y <= clamp(y2, 0, height - 1); y += 1) {
+		for (let x = clamp(x1, 0, width - 1); x <= clamp(x2, 0, width - 1); x += 1) {
+			pixels[y * width + x] = 255;
+		}
+	}
+}
+
+function fillMaskPolygon(pixels, width, height, points) {
+	const scaled = points.map((point) => ({ x: point.x * width, y: point.y * height }));
+	const minY = clamp(Math.floor(Math.min(...scaled.map((point) => point.y))), 0, height - 1);
+	const maxY = clamp(Math.ceil(Math.max(...scaled.map((point) => point.y))), 0, height - 1);
+
+	for (let y = minY; y <= maxY; y += 1) {
+		const intersections = [];
+
+		for (let index = 0; index < scaled.length; index += 1) {
+			const a = scaled[index];
+			const b = scaled[(index + 1) % scaled.length];
+
+			if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+				intersections.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
+			}
+		}
+
+		intersections.sort((a, b) => a - b);
+
+		for (let index = 0; index < intersections.length; index += 2) {
+			const start = clamp(Math.floor(intersections[index]), 0, width - 1);
+			const end = clamp(Math.ceil(intersections[index + 1] || intersections[index]), 0, width - 1);
+
+			for (let x = start; x <= end; x += 1) {
+				pixels[y * width + x] = 255;
+			}
+		}
+	}
+}
+
+function fillMaskBrush(pixels, width, height, shape) {
+	const radius = Math.max(1, Math.round((shape.brushSize || DEFAULT_BLUR_BRUSH_SIZE) * Math.max(width, height) / 2));
+	const points = shape.points.map((point) => ({
+		x: Math.round(point.x * width),
+		y: Math.round(point.y * height),
+	}));
+
+	for (let index = 0; index < points.length; index += 1) {
+		fillMaskCircle(pixels, width, height, points[index].x, points[index].y, radius);
+
+		if (index > 0) {
+			const previous = points[index - 1];
+			const current = points[index];
+			const steps = Math.max(1, Math.ceil(Math.hypot(current.x - previous.x, current.y - previous.y) / Math.max(1, radius / 2)));
+
+			for (let step = 1; step < steps; step += 1) {
+				const t = step / steps;
+				fillMaskCircle(
+					pixels,
+					width,
+					height,
+					Math.round(previous.x + (current.x - previous.x) * t),
+					Math.round(previous.y + (current.y - previous.y) * t),
+					radius
+				);
+			}
+		}
+	}
+}
+
+function fillMaskCircle(pixels, width, height, centerX, centerY, radius) {
+	const radiusSquared = radius * radius;
+	const minX = clamp(centerX - radius, 0, width - 1);
+	const maxX = clamp(centerX + radius, 0, width - 1);
+	const minY = clamp(centerY - radius, 0, height - 1);
+	const maxY = clamp(centerY + radius, 0, height - 1);
+
+	for (let y = minY; y <= maxY; y += 1) {
+		for (let x = minX; x <= maxX; x += 1) {
+			const dx = x - centerX;
+			const dy = y - centerY;
+
+			if (dx * dx + dy * dy <= radiusSquared) {
+				pixels[y * width + x] = 255;
+			}
+		}
+	}
+}
+
+function createColorFilter(segment, videoInfo) {
+	const duration = formatFfmpegSeconds(segment.end - segment.start);
+	const width = Math.max(2, Math.round(videoInfo.width));
+	const height = Math.max(2, Math.round(videoInfo.height));
+	const frameRate = Math.max(1, Math.round(videoInfo.frameRate || DEFAULT_LOCAL_FRAME_RATE));
+
+	return `color=c=${hexColorToFfmpegColor(segment.color)}:s=${width}x${height}:r=${frameRate}:d=${duration}`;
+}
+
+function hexColorToFfmpegColor(color) {
+	return `0x${String(normalizeHexColor(color) || DEFAULT_REPLACEMENT_COLOR).replace("#", "")}`;
+}
+
 function shouldCopyWholeVideo(keepRanges, duration) {
 	return keepRanges.length === 1 && keepRanges[0].start <= CUT_POINT_MIN_GAP && keepRanges[0].end >= duration - CUT_POINT_MIN_GAP;
 }
@@ -3304,8 +4448,8 @@ async function cleanupFfmpegFiles(ffmpeg, fileNames) {
 }
 
 editVideoButton.addEventListener("click", async () => {
-	if (!hasCurrentVideo()) {
-		showToast("Choose a video first", "Pick a source video before editing.", "warning");
+	if (!hasLoadedCurrentVideoPreview()) {
+		showToast("Load preview first", "Load the local preview before editing.", "warning");
 		return;
 	}
 
@@ -3337,6 +4481,8 @@ playbackRateSlider.addEventListener("input", () => {
 });
 
 videoElement.addEventListener("ratechange", updatePlaybackRateDisplay);
+videoElement.addEventListener("loadedmetadata", renderBlurMaskCanvas);
+window.addEventListener("resize", renderBlurMaskCanvas);
 
 function setActionControlsEnabled(enabled) {
 	saveCutlistButton.disabled = !enabled;
@@ -3360,6 +4506,29 @@ function updateCutCount(count) {
 function updatePlaybackRateDisplay() {
 	playbackRateElement.textContent = `${videoElement.playbackRate.toFixed(1)}x`;
 	playbackRateSlider.value = String(videoElement.playbackRate);
+}
+
+function updateLocalPreviewButton() {
+	const isLocalSource = currentVideoSource && currentVideoSource.type === "local";
+	const isLoading = isLocalSource && currentVideoSource.previewLoading;
+	const isLoaded = isLocalSource && currentVideoSource.previewLoaded;
+	const canLoad = canLoadSelectedLocalPreview();
+	const label = isLoading
+		? "Loading Preview..."
+		: isLoaded
+			? "Preview Loaded"
+			: "Load Preview";
+
+	if (loadLocalPreviewButton) {
+		loadLocalPreviewButton.disabled = !canLoad;
+		loadLocalPreviewButton.textContent = label;
+	}
+
+	if (loadLocalPreviewStageButton) {
+		loadLocalPreviewStageButton.hidden = !isLocalSource || isLoaded;
+		loadLocalPreviewStageButton.disabled = !canLoad;
+		loadLocalPreviewStageButton.textContent = label === "Load Preview" ? "Load Selected Preview" : label;
+	}
 }
 
 function getFileName(src) {

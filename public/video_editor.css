@@ -133,8 +133,13 @@ video {
 	box-shadow: 0 8px 24px rgba(31, 35, 34, 0.06);
 	display: grid;
 	gap: 12px;
-	grid-template-columns: minmax(280px, 1.1fr) minmax(260px, 1fr) minmax(170px, 0.55fr) minmax(170px, 0.55fr);
+	grid-template-columns: minmax(260px, 1.1fr) minmax(240px, 1fr) auto minmax(160px, 0.55fr) minmax(160px, 0.55fr);
 	padding: 14px;
+}
+
+.setup-panel__button {
+	align-self: end;
+	white-space: nowrap;
 }
 
 .field {
@@ -318,6 +323,20 @@ video {
 	height: 100%;
 	object-fit: contain;
 	width: 100%;
+}
+
+.blur-mask-canvas {
+	height: 100%;
+	inset: 0;
+	pointer-events: none;
+	position: absolute;
+	width: 100%;
+	z-index: 2;
+}
+
+body.blur-mask-drawing .blur-mask-canvas {
+	cursor: crosshair;
+	pointer-events: auto;
 }
 
 body:not(.has-video) .video-stage > video {
@@ -752,6 +771,18 @@ body:not(.has-video) .timeline {
 	box-shadow: 0 0 0 1px rgba(17, 94, 89, 0.95);
 }
 
+.timeline__cut-marker--blur {
+	background:
+		repeating-linear-gradient(
+			90deg,
+			rgba(15, 118, 110, 0.82) 0,
+			rgba(15, 118, 110, 0.82) 9px,
+			rgba(5, 150, 105, 0.72) 9px,
+			rgba(5, 150, 105, 0.72) 18px
+		);
+	box-shadow: 0 0 0 1px rgba(17, 94, 89, 0.95);
+}
+
 .timeline__cut-handle {
 	align-items: center;
 	background: #ffffff;
@@ -874,7 +905,9 @@ body:not(.has-video) .timeline {
 .cut-point-editor__actions,
 .cut-options-editor__actions,
 .cut-options-editor__cut-actions,
-.cut-options-editor__reason {
+.cut-options-editor__reason,
+.blur-mask-editor,
+.blur-mask-editor__actions {
 	align-items: end;
 	display: flex;
 	flex-wrap: wrap;
@@ -929,13 +962,32 @@ body:not(.has-video) .timeline {
 	padding-top: 10px;
 }
 
+.blur-mask-editor {
+	border-top: 1px solid var(--stroke);
+	display: grid;
+	grid-column: 1 / -1;
+	grid-template-columns: minmax(140px, 0.4fr) minmax(150px, 0.45fr) minmax(150px, 0.45fr);
+	padding-top: 10px;
+}
+
+.blur-mask-editor__actions {
+	grid-column: 1 / -1;
+}
+
+.blur-mask-editor input[type="range"] {
+	accent-color: var(--accent);
+	padding: 0;
+}
+
 .field--color input {
 	min-height: 40px;
 	padding: 4px 6px;
 }
 
 .cut-options-editor.is-remove .field--color,
-.cut-options-editor.is-remove .cut-options-editor__actions {
+.cut-options-editor.is-remove .cut-options-editor__actions,
+.cut-options-editor.is-blur .field--color,
+.cut-options-editor.is-blur .cut-options-editor__actions {
 	opacity: 0.55;
 }
 
@@ -1117,12 +1169,18 @@ body.preview-skip-enabled #skip-cuts-status {
 .panel-header__actions {
 	align-items: center;
 	display: flex;
+	flex-wrap: wrap;
 	gap: 8px;
+	justify-content: flex-end;
 }
 
 .panel-header__actions .button {
 	min-height: 34px;
 	padding: 0 12px;
+}
+
+.panel-header__actions .button--primary {
+	min-width: 0;
 }
 
 .panel-header h2 {

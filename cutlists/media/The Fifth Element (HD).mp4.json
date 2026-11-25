@@ -1,0 +1,69 @@
+{
+  "videoSrc": "media/The Fifth Element (HD).mp4",
+  "sourceType": "server",
+  "videoIdentity": {
+    "type": "server",
+    "path": "media/The Fifth Element (HD).mp4"
+  },
+  "cutList": [
+    {
+      "start": "1622.329042",
+      "end": "1627.667708",
+      "mode": "remove"
+    },
+    {
+      "start": "1640.430458",
+      "end": "1642.140500",
+      "mode": "remove"
+    },
+    {
+      "start": "2878.709167",
+      "end": "2884.256375",
+      "mode": "remove"
+    },
+    {
+      "start": "4002.206542",
+      "end": "4002.540208",
+      "mode": "remove"
+    },
+    {
+      "start": "4564.044921",
+      "end": "4576.689865",
+      "mode": "remove"
+    },
+    {
+      "start": "4622.742279",
+      "end": "4628.836593",
+      "mode": "remove"
+    },
+    {
+      "start": "4647.934958",
+      "end": "4656.902250",
+      "mode": "remove"
+    },
+    {
+      "start": "4676.296625",
+      "end": "4681.871376",
+      "mode": "remove"
+    },
+    {
+      "start": "4686.515167",
+      "end": "4688.183500",
+      "mode": "remove"
+    },
+    {
+      "start": "4715.502458",
+      "end": "4716.418330",
+      "mode": "remove"
+    },
+    {
+      "start": "4722.217500",
+      "end": "4724.594875",
+      "mode": "remove"
+    }
+  ],
+  "episodeIdentity": null,
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-11-23T21:05:14.070Z"
+}

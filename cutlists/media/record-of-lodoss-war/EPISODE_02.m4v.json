@@ -1,0 +1,19 @@
+{
+  "videoSrc": "media/record-of-lodoss-war/EPISODE_02.m4v",
+  "cutList": [
+    {
+      "start": "128.161367",
+      "end": "134.234100",
+      "mode": "remove",
+      "reason": {
+        "category": "nudity",
+        "subcategory": "nudity-without-sex",
+        "note": "Shot of woman bathing from behind"
+      }
+    }
+  ],
+  "episodeIdentity": null,
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-04-20T18:49:00.108Z"
+}

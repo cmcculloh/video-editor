@@ -1,0 +1,19 @@
+{
+  "videoSrc": "media/Valerian and the City of a Thousand.mp4",
+  "sourceType": "server",
+  "videoIdentity": {
+    "type": "server",
+    "path": "media/Valerian and the City of a Thousand.mp4"
+  },
+  "cutList": [
+    {
+      "start": "4865.735875",
+      "end": "5014.426083",
+      "mode": "remove"
+    }
+  ],
+  "episodeIdentity": null,
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-11-23T16:41:25.453Z"
+}

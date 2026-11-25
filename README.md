@@ -127,6 +127,7 @@ Saved cutlists can include per-cut `reason` objects, plus an `episodeIdentity` o
 ### Step 3: Run the edit script
 
 1. Run the edit script with `npm run editvideo -- <selected-video-filename>`.
+   Paths are relative to `public/` (for example, `media/The-Jerk.mp4`); project-relative paths such as `./public/media/The-Jerk.mp4` also work.
 2. The script processes the input video according to the cutlist, creating a new output video with the specified cuts.
 
 The edit script reads saved cutlists from `cutlists/`, processes the input video by cutting the specified segments, and concatenates the remaining segments to create a new output video. The script uses the `fluent-ffmpeg` library to perform video editing operations, and the `async` library to handle asynchronous processing.

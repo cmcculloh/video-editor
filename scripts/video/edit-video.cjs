@@ -5,8 +5,10 @@ const ffmpeg = require("fluent-ffmpeg");
 const ffprobe = require("fluent-ffmpeg").ffprobe;
 const async = require("async");
 const {
+	CUT_MODE_BLUR,
 	CUT_MODE_REMOVE,
 	CUT_MODE_REPLACE,
+	DEFAULT_BLUR_AMOUNT,
 	DEFAULT_REPLACEMENT_COLOR,
 	getCutListConfigForVideo,
 	getIntroOutroPath,
@@ -21,7 +23,9 @@ if (!file) {
 	process.exit(1);
 }
 
-const videoFile = normalizeVideoPath(file);
+// Saved cutlists and editor filenames are relative to public/, but CLI users
+// can also pass a project-relative path such as ./public/media/movie.mp4.
+const videoFile = normalizeVideoPath(normalizeVideoPath(file).replace(/^public\//, ""));
 const options = parseOptions(process.argv.slice(3));
 const cutListConfig = getCutListConfigForVideo(videoFile);
 const cutList = cutListConfig.cutList;
@@ -261,6 +265,201 @@ function createColorReplacementVideo(input, segment, output, videoInfo, callback
 	});
 }
 
+function createBlurReplacementVideo(input, segment, output, videoInfo, callback, index) {
+	const duration = segment.end - segment.start;
+	const startedAt = Date.now();
+	const maskPath = path.join(rootDir, "temp_segments", `blur_mask_${index}.pgm`);
+	fs.writeFileSync(maskPath, createBlurMaskPgm(segment.blur, videoInfo.width, videoInfo.height));
+
+	const blurAmount = Math.max(2, Math.min(64, Math.round(segment.blur && segment.blur.amount || DEFAULT_BLUR_AMOUNT)));
+	const filter = `[0:v]split[base][blurbase];[blurbase]boxblur=${blurAmount}:1[blurred];[1:v]format=gray,scale=${videoInfo.width}:${videoInfo.height}[mask];[blurred][mask]alphamerge[blurredalpha];[base][blurredalpha]overlay=0:0,format=yuv420p[v]`;
+	const child = spawn("ffmpeg", [
+		"-y",
+		"-ss",
+		String(segment.start),
+		"-t",
+		String(duration),
+		"-i",
+		input,
+		"-loop",
+		"1",
+		"-i",
+		maskPath,
+		"-filter_complex",
+		filter,
+		"-map",
+		"[v]",
+		"-map",
+		"0:a:0?",
+		"-t",
+		String(duration),
+		"-shortest",
+		"-c:v",
+		"libx264",
+		"-pix_fmt",
+		"yuv420p",
+		"-c:a",
+		"aac",
+		output,
+	]);
+	let stderr = "";
+	let timer = null;
+
+	if (typeof callback.onProgress === "function") {
+		timer = setInterval(() => {
+			const elapsedSeconds = (Date.now() - startedAt) / 1000;
+			const estimatedWorkSeconds = estimateSegmentWorkSeconds(duration, videoInfo, "blur");
+			callback.onProgress({
+				percent: Math.min(95, (elapsedSeconds / estimatedWorkSeconds) * 100),
+			});
+		}, 1000);
+	}
+
+	function cleanup() {
+		if (timer) {
+			clearInterval(timer);
+		}
+
+		fs.promises.unlink(maskPath).catch(() => {});
+	}
+
+	child.stderr.on("data", (data) => {
+		stderr += data.toString();
+	});
+	child.on("error", (error) => {
+		cleanup();
+		callback(error);
+	});
+	child.on("close", (code) => {
+		cleanup();
+
+		if (code === 0) {
+			callback(null);
+			return;
+		}
+
+		callback(new Error(`ffmpeg blur replacement failed with exit code ${code}.\n${stderr}`));
+	});
+}
+
+function createBlurMaskPgm(blur, width, height) {
+	const maskWidth = Math.max(2, Math.round(width || 1280));
+	const maskHeight = Math.max(2, Math.round(height || 720));
+	const pixels = Buffer.alloc(maskWidth * maskHeight);
+	const shapes = blur && Array.isArray(blur.shapes) ? blur.shapes : [];
+
+	shapes.forEach((shape) => {
+		if (shape.tool === "rectangle" && shape.rect) {
+			fillMaskRect(pixels, maskWidth, maskHeight, shape.rect);
+		} else if (shape.tool === "lasso" && Array.isArray(shape.points)) {
+			fillMaskPolygon(pixels, maskWidth, maskHeight, shape.points);
+		} else if (shape.tool === "brush" && Array.isArray(shape.points)) {
+			fillMaskBrush(pixels, maskWidth, maskHeight, shape);
+		}
+	});
+
+	return Buffer.concat([
+		Buffer.from(`P5\n${maskWidth} ${maskHeight}\n255\n`),
+		pixels,
+	]);
+}
+
+function fillMaskRect(pixels, width, height, rect) {
+	const x1 = Math.floor((Number(rect.x) || 0) * width);
+	const y1 = Math.floor((Number(rect.y) || 0) * height);
+	const x2 = Math.ceil(((Number(rect.x) || 0) + (Number(rect.width) || 0)) * width);
+	const y2 = Math.ceil(((Number(rect.y) || 0) + (Number(rect.height) || 0)) * height);
+
+	for (let y = clampPixel(y1, height); y <= clampPixel(y2, height); y++) {
+		for (let x = clampPixel(x1, width); x <= clampPixel(x2, width); x++) {
+			pixels[y * width + x] = 255;
+		}
+	}
+}
+
+function fillMaskPolygon(pixels, width, height, points) {
+	const scaled = points.map((point) => ({ x: (Number(point.x) || 0) * width, y: (Number(point.y) || 0) * height }));
+	const minY = clampPixel(Math.floor(Math.min(...scaled.map((point) => point.y))), height);
+	const maxY = clampPixel(Math.ceil(Math.max(...scaled.map((point) => point.y))), height);
+
+	for (let y = minY; y <= maxY; y++) {
+		const intersections = [];
+
+		for (let index = 0; index < scaled.length; index++) {
+			const a = scaled[index];
+			const b = scaled[(index + 1) % scaled.length];
+
+			if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+				intersections.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
+			}
+		}
+
+		intersections.sort((a, b) => a - b);
+
+		for (let index = 0; index < intersections.length; index += 2) {
+			const start = clampPixel(Math.floor(intersections[index]), width);
+			const end = clampPixel(Math.ceil(intersections[index + 1] || intersections[index]), width);
+
+			for (let x = start; x <= end; x++) {
+				pixels[y * width + x] = 255;
+			}
+		}
+	}
+}
+
+function fillMaskBrush(pixels, width, height, shape) {
+	const radius = Math.max(1, Math.round((Number(shape.brushSize) || 0.055) * Math.max(width, height) / 2));
+	const points = shape.points.map((point) => ({
+		x: Math.round((Number(point.x) || 0) * width),
+		y: Math.round((Number(point.y) || 0) * height),
+	}));
+
+	for (let index = 0; index < points.length; index++) {
+		fillMaskCircle(pixels, width, height, points[index].x, points[index].y, radius);
+
+		if (index > 0) {
+			const previous = points[index - 1];
+			const current = points[index];
+			const steps = Math.max(1, Math.ceil(Math.hypot(current.x - previous.x, current.y - previous.y) / Math.max(1, radius / 2)));
+
+			for (let step = 1; step < steps; step++) {
+				const t = step / steps;
+				fillMaskCircle(
+					pixels,
+					width,
+					height,
+					Math.round(previous.x + (current.x - previous.x) * t),
+					Math.round(previous.y + (current.y - previous.y) * t),
+					radius
+				);
+			}
+		}
+	}
+}
+
+function fillMaskCircle(pixels, width, height, centerX, centerY, radius) {
+	const radiusSquared = radius * radius;
+	const minX = clampPixel(centerX - radius, width);
+	const maxX = clampPixel(centerX + radius, width);
+	const minY = clampPixel(centerY - radius, height);
+	const maxY = clampPixel(centerY + radius, height);
+
+	for (let y = minY; y <= maxY; y++) {
+		for (let x = minX; x <= maxX; x++) {
+			const dx = x - centerX;
+			const dy = y - centerY;
+
+			if (dx * dx + dy * dy <= radiusSquared) {
+				pixels[y * width + x] = 255;
+			}
+		}
+	}
+}
+
+function clampPixel(value, size) {
+	return Math.max(0, Math.min(size - 1, Math.round(value)));
+}
+
 function processVideo(input, cutList, output, callback, options = {}) {
 	let segments = [];
 
@@ -348,6 +547,11 @@ function processVideo(input, cutList, output, callback, options = {}) {
 					return;
 				}
 
+				if (segment.type === "blur") {
+					createBlurReplacementVideo(input, segment, outputSegment, videoInfo, completeSegment, index);
+					return;
+				}
+
 				cutVideo(input, segment.start, segment.end, outputSegment, completeSegment, {
 					videoCodec: "libx264",
 					audioCodec: "aac",
@@ -377,6 +581,10 @@ function getSegmentLabel(type) {
 
 	if (type === "color") {
 		return "Replacing video with color";
+	}
+
+	if (type === "blur") {
+		return "Blurring selected area";
 	}
 
 	return "Cutting video segment";
@@ -460,7 +668,7 @@ function parseTimemark(timemark) {
 function estimateSegmentWorkSeconds(duration, videoInfo, type) {
 	const pixels = (videoInfo.width || 1280) * (videoInfo.height || 720);
 	const resolutionFactor = Math.max(0.5, pixels / (1280 * 720));
-	const typeFactor = type === "black" ? 0.35 : type === "color" ? 0.55 : 0.8;
+	const typeFactor = type === "black" ? 0.35 : type === "color" ? 0.55 : type === "blur" ? 1.1 : 0.8;
 
 	return Math.max(2, duration * resolutionFactor * typeFactor);
 }
@@ -485,7 +693,11 @@ function createTimelineSegments(cutList, videoDurationInSeconds, debugBlackCuts)
 	cutList.forEach((timestamp) => {
 		const start = clampTime(timeStringToSeconds(timestamp.start), videoDurationInSeconds);
 		const end = clampTime(timeStringToSeconds(timestamp.end), videoDurationInSeconds);
-		const mode = timestamp.mode === CUT_MODE_REPLACE ? CUT_MODE_REPLACE : CUT_MODE_REMOVE;
+		const mode = timestamp.mode === CUT_MODE_REPLACE
+			? CUT_MODE_REPLACE
+			: timestamp.mode === CUT_MODE_BLUR
+				? CUT_MODE_BLUR
+				: CUT_MODE_REMOVE;
 		const effectiveStart = Math.max(start, currentStart);
 
 		if (start > currentStart) {
@@ -499,6 +711,13 @@ function createTimelineSegments(cutList, videoDurationInSeconds, debugBlackCuts)
 					start: effectiveStart,
 					end,
 					color: timestamp.color || DEFAULT_REPLACEMENT_COLOR,
+				});
+			} else if (mode === CUT_MODE_BLUR) {
+				segments.push({
+					type: "blur",
+					start: effectiveStart,
+					end,
+					blur: timestamp.blur || { amount: DEFAULT_BLUR_AMOUNT, shapes: [] },
 				});
 			} else if (debugBlackCuts) {
 				segments.push({ type: "black", start: effectiveStart, end });

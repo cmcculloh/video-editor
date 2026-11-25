@@ -6,7 +6,9 @@ const cutlistsDir = path.join(rootDir, "cutlists");
 const introsAndOutrosDir = path.join(rootDir, "public", "intros-and-outros");
 const CUT_MODE_REMOVE = "remove";
 const CUT_MODE_REPLACE = "replace";
+const CUT_MODE_BLUR = "blur";
 const DEFAULT_REPLACEMENT_COLOR = "#000000";
+const DEFAULT_BLUR_AMOUNT = 18;
 const CUT_REASON_CATEGORIES = [
 	{
 		id: "language",
@@ -156,11 +158,52 @@ function getCutListConfigForVideo(videoFile) {
 	}
 
 	return {
+		videoSrc: cutListData.videoSrc || videoFile,
+		sourceType: normalizeSourceType(cutListData.sourceType),
+		videoIdentity: normalizeVideoIdentity(cutListData.videoIdentity),
 		cutList: normalizeCutList(cutList),
 		episodeIdentity: normalizeEpisodeIdentity(cutListData.episodeIdentity),
 		introSrc: cutListData.introSrc || null,
 		outroSrc: cutListData.outroSrc || null,
 	};
+}
+
+function normalizeSourceType(sourceType) {
+	const normalized = normalizeOptionalText(sourceType, 40);
+
+	if (!normalized) {
+		return null;
+	}
+
+	return normalized.toLowerCase();
+}
+
+function normalizeVideoIdentity(identity) {
+	if (!identity) {
+		return null;
+	}
+
+	if (typeof identity !== "object" || Array.isArray(identity)) {
+		throw new Error("Video identity must be an object.");
+	}
+
+	const normalized = {};
+
+	Object.entries(identity).forEach(([key, value]) => {
+		if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,39}$/.test(key)) {
+			return;
+		}
+
+		if (typeof value === "string") {
+			normalized[key] = normalizeOptionalText(value, 500);
+		} else if (typeof value === "number" && Number.isFinite(value)) {
+			normalized[key] = value;
+		} else if (typeof value === "boolean") {
+			normalized[key] = value;
+		}
+	});
+
+	return Object.keys(normalized).length ? normalized : null;
 }
 
 function normalizeEpisodeIdentity(identity) {
@@ -232,6 +275,10 @@ function normalizeCutList(cutList) {
 				normalizedCut.color = normalizeCutColor(cut.color || DEFAULT_REPLACEMENT_COLOR, index);
 			}
 
+			if (mode === CUT_MODE_BLUR) {
+				normalizedCut.blur = normalizeBlurMask(cut.blur, index);
+			}
+
 			const reason = normalizeCutReason(cut.reason, index);
 
 			if (reason) {
@@ -252,7 +299,110 @@ function normalizeCutMode(mode) {
 		return CUT_MODE_REPLACE;
 	}
 
+	if (mode === CUT_MODE_BLUR) {
+		return CUT_MODE_BLUR;
+	}
+
 	throw new Error(`Invalid cut mode: ${mode}`);
+}
+
+function normalizeBlurMask(blur, index) {
+	if (!blur || typeof blur !== "object" || Array.isArray(blur)) {
+		throw new Error(`Blur cut ${index} needs a selected area.`);
+	}
+
+	const shapes = Array.isArray(blur.shapes)
+		? blur.shapes.map((shape) => normalizeBlurShape(shape)).filter(Boolean)
+		: [];
+
+	if (!shapes.length) {
+		throw new Error(`Blur cut ${index} needs at least one selected area.`);
+	}
+
+	return {
+		amount: normalizeBlurAmount(blur.amount),
+		shapes,
+	};
+}
+
+function normalizeBlurAmount(amount) {
+	const normalized = Number(amount);
+
+	if (!Number.isFinite(normalized)) {
+		return DEFAULT_BLUR_AMOUNT;
+	}
+
+	return Math.max(2, Math.min(64, Math.round(normalized)));
+}
+
+function normalizeBlurShape(shape) {
+	if (!shape || typeof shape !== "object" || Array.isArray(shape)) {
+		return null;
+	}
+
+	if (shape.tool === "rectangle") {
+		const rect = normalizeBlurRect(shape.rect);
+		return rect ? { tool: "rectangle", rect } : null;
+	}
+
+	if (shape.tool === "lasso") {
+		const points = normalizeBlurPoints(shape.points);
+		return points.length >= 3 ? { tool: "lasso", points } : null;
+	}
+
+	if (shape.tool === "brush") {
+		const points = normalizeBlurPoints(shape.points);
+		const brushSize = Math.max(0.005, Math.min(0.35, Number(shape.brushSize) || 0.04));
+		return points.length ? { tool: "brush", points, brushSize } : null;
+	}
+
+	return null;
+}
+
+function normalizeBlurRect(rect) {
+	if (!rect || typeof rect !== "object" || Array.isArray(rect)) {
+		return null;
+	}
+
+	const x = clampUnit(rect.x);
+	const y = clampUnit(rect.y);
+	const width = clampUnit(rect.width);
+	const height = clampUnit(rect.height);
+
+	if (width <= 0 || height <= 0) {
+		return null;
+	}
+
+	return { x, y, width, height };
+}
+
+function normalizeBlurPoints(points) {
+	if (!Array.isArray(points)) {
+		return [];
+	}
+
+	return points
+		.map((point) => {
+			if (!point || typeof point !== "object" || Array.isArray(point)) {
+				return null;
+			}
+
+			return {
+				x: clampUnit(point.x),
+				y: clampUnit(point.y),
+			};
+		})
+		.filter(Boolean);
+}
+
+function clampUnit(value) {
+	const normalized = Number(value);
+
+	if (!Number.isFinite(normalized)) {
+		return 0;
+	}
+
+	return Math.max(0, Math.min(1, normalized));
 }
 
 function normalizeCutColor(color, index) {
@@ -441,10 +591,12 @@ function normalizeOptionalHttpUrl(value) {
 }
 
 module.exports = {
+	CUT_MODE_BLUR,
 	CUT_MODE_REMOVE,
 	CUT_MODE_REPLACE,
 	CUT_REASON_CATEGORIES,
 	cutlistsDir,
+	DEFAULT_BLUR_AMOUNT,
 	DEFAULT_REPLACEMENT_COLOR,
 	getCutListConfigForVideo,
 	getIntroOutroPath,
@@ -453,5 +605,7 @@ module.exports = {
 	introsAndOutrosDir,
 	normalizeCutList,
 	normalizeEpisodeIdentity,
+	normalizeSourceType,
+	normalizeVideoIdentity,
 	normalizeVideoPath,
 };

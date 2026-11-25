@@ -1,0 +1,19 @@
+{
+  "videoSrc": "media/The-Jerk.mp4",
+  "sourceType": "server",
+  "videoIdentity": {
+    "type": "server",
+    "path": "media/The-Jerk.mp4"
+  },
+  "cutList": [
+    {
+      "start": "2104.865567",
+      "end": "2313.605272",
+      "mode": "remove"
+    }
+  ],
+  "episodeIdentity": null,
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-11-23T02:03:50.907Z"
+}

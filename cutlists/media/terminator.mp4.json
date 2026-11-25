@@ -1,0 +1,24 @@
+{
+  "videoSrc": "media/terminator.mp4",
+  "sourceType": "server",
+  "videoIdentity": {
+    "type": "server",
+    "path": "media/terminator.mp4"
+  },
+  "cutList": [
+    {
+      "start": "1563.645417",
+      "end": "1572.112208",
+      "mode": "remove"
+    },
+    {
+      "start": "4918.246667",
+      "end": "4973.760458",
+      "mode": "remove"
+    }
+  ],
+  "episodeIdentity": null,
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-08-12T20:01:57.401Z"
+}

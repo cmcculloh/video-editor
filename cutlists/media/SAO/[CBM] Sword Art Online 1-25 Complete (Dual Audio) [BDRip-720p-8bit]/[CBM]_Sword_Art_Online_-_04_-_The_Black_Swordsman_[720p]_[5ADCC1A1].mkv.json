@@ -1,0 +1,29 @@
+{
+  "videoSrc": "media/SAO/[CBM] Sword Art Online 1-25 Complete (Dual Audio) [BDRip-720p-8bit]/[CBM]_Sword_Art_Online_-_04_-_The_Black_Swordsman_[720p]_[5ADCC1A1].mkv",
+  "cutList": [
+    {
+      "start": "576.742833",
+      "end": "590.881958",
+      "mode": "remove",
+      "reason": {
+        "category": "nudity",
+        "subcategory": "nudity-without-sex",
+        "note": "Girl in underwear"
+      }
+    },
+    {
+      "start": "594.093500",
+      "end": "611.235625",
+      "mode": "remove",
+      "reason": {
+        "category": "nudity",
+        "subcategory": "nudity-without-sex",
+        "note": "Girl in underwear"
+      }
+    }
+  ],
+  "episodeIdentity": null,
+  "introSrc": null,
+  "outroSrc": null,
+  "updatedAt": "2026-04-20T18:40:01.680Z"
+}

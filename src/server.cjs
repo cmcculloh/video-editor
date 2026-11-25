@@ -11,6 +11,8 @@ const {
 	introsAndOutrosDir,
 	normalizeCutList,
 	normalizeEpisodeIdentity,
+	normalizeSourceType,
+	normalizeVideoIdentity,
 	normalizeVideoPath,
 } = require("./cutlist-config.cjs");
 const app = express();
@@ -19,6 +21,7 @@ const rootDir = path.join(__dirname, "..");
 const publicDir = path.join(rootDir, "public");
 const editScriptPath = path.join("scripts", "video", "edit-video.cjs");
 const editJobs = new Map();
+const metadataProvider = createTvmazeMetadataProvider();
 const videoExtensions = new Set([
 	".avi",
 	".m4v",
@@ -75,6 +78,8 @@ app.get("/cutlists", async (req, res) => {
 				exists: false,
 				cutList: [],
 				episodeIdentity: null,
+				sourceType: null,
+				videoIdentity: null,
 				introSrc: null,
 				outroSrc: null,
 				path: path.relative(rootDir, cutListPath),
@@ -85,10 +90,21 @@ app.get("/cutlists", async (req, res) => {
 		const cutListData = JSON.parse(await fs.promises.readFile(cutListPath, "utf8"));
 		const cutList = normalizeCutList(Array.isArray(cutListData) ? cutListData : cutListData.cutList);
 		const episodeIdentity = normalizeEpisodeIdentity(cutListData.episodeIdentity);
+		const sourceType = normalizeSourceType(cutListData.sourceType);
+		const videoIdentity = normalizeVideoIdentity(cutListData.videoIdentity);
 		const introSrc = normalizeOptionalIntroOutro(cutListData.introSrc);
 		const outroSrc = normalizeOptionalIntroOutro(cutListData.outroSrc);
 
-		res.json({ exists: true, cutList, episodeIdentity, introSrc, outroSrc, path: path.relative(rootDir, cutListPath) });
+		res.json({
+			exists: true,
+			cutList,
+			episodeIdentity,
+			sourceType,
+			videoIdentity,
+			introSrc,
+			outroSrc,
+			path: path.relative(rootDir, cutListPath),
+		});
 	} catch (error) {
 		console.error("Error loading cutlist:", error);
 		res.status(400).json({ error: error.message || "Failed to load cutlist" });
@@ -100,9 +116,11 @@ app.post("/cutlists", async (req, res) => {
 		const videoSrc = normalizeVideoPath(req.body.videoSrc);
 		const cutList = normalizeCutList(req.body.cutList);
 		const episodeIdentity = normalizeEpisodeIdentity(req.body.episodeIdentity);
+		const sourceType = normalizeSourceType(req.body.sourceType);
+		const videoIdentity = normalizeVideoIdentity(req.body.videoIdentity);
 		const introSrc = normalizeOptionalIntroOutro(req.body.introSrc);
 		const outroSrc = normalizeOptionalIntroOutro(req.body.outroSrc);
-		const cutListPath = await saveCutlistForVideo(videoSrc, { cutList, episodeIdentity, introSrc, outroSrc });
+		const cutListPath = await saveCutlistForVideo(videoSrc, { cutList, episodeIdentity, sourceType, videoIdentity, introSrc, outroSrc });
 		const editCommand = getEditCommand(videoSrc, { introSrc, outroSrc });
 
 		res.json({ ok: true, path: path.relative(rootDir, cutListPath), editCommand });
@@ -115,10 +133,11 @@ app.post("/cutlists", async (req, res) => {
 app.get("/metadata/search-shows", async (req, res) => {
 	try {
 		const query = normalizeMetadataSearchQuery(req.query.q);
-		const results = await getTvmazeData("/search/shows", { q: query });
+		const results = await metadataProvider.searchShows(query);
 
 		res.json({
-			shows: results.slice(0, 12).map(normalizeTvmazeShowSearchResult),
+			provider: metadataProvider.id,
+			shows: results,
 		});
 	} catch (error) {
 		console.error("Error searching TVmaze shows:", error);
@@ -129,15 +148,12 @@ app.get("/metadata/search-shows", async (req, res) => {
 app.get("/metadata/shows/:showId/episodes", async (req, res) => {
 	try {
 		const showId = normalizeTvmazeId(req.params.showId, "TVmaze show ID");
-		const [show, episodes] = await Promise.all([
-			getTvmazeData(`/shows/${showId}`),
-			getTvmazeData(`/shows/${showId}/episodes`, { specials: "1" }),
-		]);
-		const normalizedShow = normalizeTvmazeShow(show);
+		const result = await metadataProvider.getShowEpisodes(showId);
 
 		res.json({
-			show: normalizedShow,
-			episodes: episodes.map((episode) => normalizeTvmazeEpisode(episode, normalizedShow)),
+			provider: metadataProvider.id,
+			show: result.show,
+			episodes: result.episodes,
 		});
 	} catch (error) {
 		console.error("Error loading TVmaze episodes:", error);
@@ -150,10 +166,12 @@ app.post("/edits", async (req, res) => {
 		const videoSrc = normalizeVideoPath(req.body.videoSrc);
 		const cutList = normalizeCutList(req.body.cutList);
 		const episodeIdentity = normalizeEpisodeIdentity(req.body.episodeIdentity);
+		const sourceType = normalizeSourceType(req.body.sourceType);
+		const videoIdentity = normalizeVideoIdentity(req.body.videoIdentity);
 		const introSrc = normalizeOptionalIntroOutro(req.body.introSrc);
 		const outroSrc = normalizeOptionalIntroOutro(req.body.outroSrc);
 		const debugBlackCuts = Boolean(req.body.debugBlackCuts);
-		const cutListPath = await saveCutlistForVideo(videoSrc, { cutList, episodeIdentity, introSrc, outroSrc });
+		const cutListPath = await saveCutlistForVideo(videoSrc, { cutList, episodeIdentity, sourceType, videoIdentity, introSrc, outroSrc });
 		const command = getEditCommand(videoSrc, { introSrc, outroSrc, debugBlackCuts });
 		const output = path.join("public", getEditedVideoPath(videoSrc, { debugBlackCuts })).split(path.sep).join("/");
 		const outputUrl = getEditedVideoPath(videoSrc, { debugBlackCuts }).split(path.sep).map(encodeURIComponent).join("/");
@@ -310,6 +328,28 @@ function normalizeTvmazeId(value, label) {
 	return normalized;
 }
 
+function createTvmazeMetadataProvider() {
+	return {
+		id: "tvmaze",
+		async searchShows(query) {
+			const results = await getTvmazeData("/search/shows", { q: query });
+			return results.slice(0, 12).map(normalizeTvmazeShowSearchResult);
+		},
+		async getShowEpisodes(showId) {
+			const [show, episodes] = await Promise.all([
+				getTvmazeData(`/shows/${showId}`),
+				getTvmazeData(`/shows/${showId}/episodes`, { specials: "1" }),
+			]);
+			const normalizedShow = normalizeTvmazeShow(show);
+
+			return {
+				show: normalizedShow,
+				episodes: episodes.map((episode) => normalizeTvmazeEpisode(episode, normalizedShow)),
+			};
+		},
+	};
+}
+
 async function getTvmazeData(pathname, params = {}) {
 	const url = new URL(pathname, "https://api.tvmaze.com");
 
@@ -460,6 +500,8 @@ async function saveCutlistForVideo(videoSrc, options) {
 		cutListPath,
 		`${JSON.stringify({
 			videoSrc,
+			sourceType: options.sourceType || null,
+			videoIdentity: options.videoIdentity || null,
 			cutList: options.cutList,
 			episodeIdentity: options.episodeIdentity || null,
 			introSrc: options.introSrc,
